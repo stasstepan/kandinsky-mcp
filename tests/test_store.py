@@ -108,8 +108,11 @@ def test_resolve_rejects_traversal_and_absolute(store: FileStore) -> None:
         store.resolve("../outside.txt")
     with pytest.raises(e.KandinskyError):
         store.resolve("results/../../outside.txt")
+    # Абсолютный путь вне хранилища. Берём домашний каталог, а не «C:/…»:
+    # на Linux строка «C:/Windows/win.ini» — относительный путь, и тест
+    # проходил бы только на Windows (на этом и упал CI).
     with pytest.raises(e.KandinskyError):
-        store.resolve("C:/Windows/win.ini")
+        store.resolve(str(Path.home() / "outside.txt"))
 
 
 def test_gc_removes_old_terminal_tasks_with_files(store: FileStore) -> None:

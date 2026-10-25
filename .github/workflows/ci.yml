@@ -1,4 +1,4 @@
-name: ci
+﻿name: ci
 
 on:
   push:
@@ -42,4 +42,8 @@ jobs:
         run: docker build -t kandinsky-mcp:ci .
 
       - name: Конфигурация compose валидна
-        run: docker compose config > /dev/null
+        # compose ссылается на .env через env_file, а в репозитории его нет
+        # (и не должно быть). Для проверки синтаксиса достаточно примера.
+        run: |
+          cp .env.example .env
+          docker compose config > /dev/null
