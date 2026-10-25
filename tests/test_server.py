@@ -198,11 +198,42 @@ async def test_healthz_is_public(bundle) -> None:
     assert response.json()["status"] == "ok"
 
 
-async def test_readyz_reports_api_state(bundle) -> None:
+async def test_readyz_reports_api_state(bundle, monkeypatch) -> None:
+    """Готовность проверяется без обращения к настоящему API.
+
+    Раньше здесь был реальный сетевой вызов: локально он проходил, а на
+    раннере GitHub внешний запрос не удавался, и тест падал с 503.
+    """
+
+    async def healthy() -> bool:
+        return True
+
+    monkeypatch.setattr(bundle.ctx.client, "health", healthy)
+
     async with asgi_client(bundle) as client:
         response = await client.get("/readyz")
+
     assert response.status_code == 200
-    assert response.json()["kandinsky_api"] == "reachable"
+    body = response.json()
+    assert body["kandinsky_api"] == "reachable"
+    assert body["status"] == "ok"
+
+
+async def test_readyz_reports_degraded_when_api_is_down(bundle, monkeypatch) -> None:
+    """Обратная ветка: API недоступен — 503 и понятный статус."""
+
+    async def unreachable() -> bool:
+        return False
+
+    monkeypatch.setattr(bundle.ctx.client, "health", unreachable)
+
+    async with asgi_client(bundle) as client:
+        response = await client.get("/readyz")
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["kandinsky_api"] == "unreachable"
+    assert body["status"] == "degraded"
 
 
 async def test_files_require_valid_signature(bundle) -> None:
