@@ -1,0 +1,106 @@
+"""HTTP-приложение: MCP по /mcp, файлы по /files, health-проверки.
+
+Собирается из приложения, которое отдаёт сам MCP SDK, плюс собственные роуты
+и два middleware: ключ доступа и ограничение частоты.
+"""
+
+from __future__ import annotations
+
+import time
+from pathlib import Path
+
+from mcp.server import MCPServer
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import FileResponse, JSONResponse, Response
+
+from . import __version__
+from .api.errors import KandinskyError
+from .auth import ApiKeyMiddleware, RateLimiter, RateLimitMiddleware, verify_file
+from .tools.context import AppContext
+
+# Кеш проверки готовности: не дёргаем внешний API на каждый запрос.
+_READY_TTL_SECONDS = 30.0
+
+
+class ReadinessProbe:
+    def __init__(self, ctx: AppContext) -> None:
+        self._ctx = ctx
+        self._checked_at = 0.0
+        self._healthy = False
+
+    async def check(self) -> tuple[bool, bool]:
+        """Возвращает (healthy, from_cache)."""
+        now = time.monotonic()
+        if now - self._checked_at < _READY_TTL_SECONDS:
+            return self._healthy, True
+        self._healthy = await self._ctx.client.health()
+        self._checked_at = now
+        return self._healthy, False
+
+
+def build_app(mcp: MCPServer, ctx: AppContext) -> Starlette:
+    settings = ctx.settings
+    probe = ReadinessProbe(ctx)
+
+    @mcp.custom_route("/healthz", methods=["GET"])
+    async def healthz(request: Request) -> Response:
+        return JSONResponse({"status": "ok", "version": __version__, "transport": "http"})
+
+    @mcp.custom_route("/readyz", methods=["GET"])
+    async def readyz(request: Request) -> Response:
+        healthy, cached = await probe.check()
+        body = {
+            "status": "ok" if healthy else "degraded",
+            "kandinsky_api": "reachable" if healthy else "unreachable",
+            "base_url": settings.kandinsky_base_url,
+            "cached": cached,
+            "active_tasks": len(ctx.manager.list_active()),
+        }
+        return JSONResponse(body, status_code=200 if healthy else 503)
+
+    @mcp.custom_route("/files/{rel_path:path}", methods=["GET"])
+    async def files(request: Request) -> Response:
+        rel_path = request.path_params["rel_path"]
+        if not verify_file(
+            settings.signing_key,
+            rel_path,
+            request.query_params.get("exp", ""),
+            request.query_params.get("sig", ""),
+        ):
+            return JSONResponse(
+                {"error": "forbidden", "hint": "Ссылка без подписи или с истёкшим сроком"},
+                status_code=403,
+            )
+        try:
+            path = ctx.store.resolve(rel_path)
+        except KandinskyError:
+            return JSONResponse({"error": "not_found"}, status_code=404)
+        if not path.is_file():
+            return JSONResponse({"error": "not_found"}, status_code=404)
+        return FileResponse(path, media_type=_guess_mime(path))
+
+    app = mcp.streamable_http_app(
+        streamable_http_path=settings.mcp_path,
+        max_request_body_size=settings.mcp_max_body_bytes,
+        host=settings.mcp_host,
+    )
+
+    if settings.auth_enabled:
+        app.add_middleware(ApiKeyMiddleware, api_key=settings.api_key)
+    app.add_middleware(
+        RateLimitMiddleware,
+        limiter=RateLimiter(settings.rate_limit_per_minute),
+    )
+    return app
+
+
+def _guess_mime(path: Path) -> str:
+    return {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+        ".mp4": "video/mp4",
+        ".wav": "audio/wav",
+    }.get(path.suffix.lower(), "application/octet-stream")

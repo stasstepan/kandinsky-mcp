@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Секреты и локальные данные
+.env
+data/
+*.pem
+*.key
+
+# Артефакты локальной разработки
+tmpdl/
+.pip-cache/
+.tmp/
+wheels/
+tests/_work/
+spike/_data/
+spike/_server.log
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+pytest-cache-files-*

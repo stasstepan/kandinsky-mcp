@@ -1,0 +1,688 @@
+﻿ИЗВЛЕЧЁННЫЙ ТЕКСТ PDF: инструкция_API_new.pdf
+Способ: разбор потоков PDF + ToUnicode CMap (Type0/Identity-H).
+Примечание: выпавшие русские слова в JSON-примерах — артефакт подмножества шрифта в исходном PDF.
+
+===== PAGE 1 (obj 24) =====
+Kandinsky API
+1. Общие сведения
+2. Kandinsky 6 T2I
+3. Kandinsky 5 T2V Pro
+4. Kandinsky 5 T2V Lite
+5. Kandinsky 6 I2I
+6. Kandinsky 5 I2V HD
+7. Kandinsky 5 I2V SD
+8. Kandinsky 5 I2V Lite
+9. Kandinsky Avatars
+10. Kandinsky Super Res
+ 
+11. Kandinsky 6.5 Preview T2VA
+12. Kandinsky 6.5 Preview I2VA
+ 
+13. Получение статуса задачи
+14. Получение результата
+Общие сведения
+1. 
+Данный API работает в асинхронном режиме: сначала вы создаете задачу (Task), затем проверяете её статус и, когда она готова, скачиваете результат.
+Ссылка на swagger: 
+https://kandinskyapi.sberdevices.ru/docs
+Общие параметры доступа
+Base URL:
+
+https://kandinskyapi.sberdevices.ru
+<Токен авторизации> (передается в заголовке
+)
+Auth Token:
+
+
+Authorization: Bearer ...
+Kandinsky 6 T2I
+2. 
+Эндпоинт предназначен для формирования запросов на генерацию изображений по текстовому описанию.
+ 
+ 
+Метод:
+POST
+ 
+/tasks/k6-image-t2i
+URL:
+https://kandinskyapi.sberdevices.ru
+Формат входных данных:
+Поле
+Тип
+Обязательно
+Описание
+Значения
+censor
+boolean
+Нет
+Флаг активации цензуры
+true/false
+params
+object
+Да
+Объект с параметрами генерации
+/query
+string
+Да
+Текстовый промпт для генерации
+/resolution
+string
+Да
+Разрешение картинки
+"1280:768"
+"768:1280"
+"1024:1024"
+/beautificator
+string
+Нет
+Параметр отвечающий за включение в пайплайн переписывания промпта при помощи LLM
+"enabled"
+"disabled"
+Структура запроса:
+{
+        "censor": true,
+          "params": {
+                "query": "",
+                "resolution": "768x1280",
+                "beautificator": "enabled"
+  }
+}
+
+===== PAGE 2 (obj 28) =====
+:
+{
+        "task_id": " "
+}
+ 
+Kandinsky 5 T2V Pro
+3. 
+Эндпоинт предназначен для формирования запросов на генерацию видео по текстовому описанию.
+ 
+ 
+Метод:
+POST
+ 
+URL:
+https://kandinskyapi.sberdevices.ru
+/tasks/k5_video_t2v_pro
+Формат входных данных:
+Поле
+Тип
+Обязательно
+Описание
+Значения
+censor
+boolean
+Нет
+Флаг активации цензуры
+true/false
+params
+object
+Да
+Объект с параметрами генерации
+/query
+string
+Да
+Текстовый промпт для генерации
+/resolution
+string
+Да
+Разрешение картинки
+"1280:768"
+"768:1280"
+/beautificator
+string
+Нет
+Параметр отвечающий за включение в пайплайн переписывания промпта при помощи LLM
+"gigachat-max"
+"disabled"
+Структура запроса:
+{
+        "censor": true,
+          "params": {
+                "query": "",
+                "resolution": "768x1280",
+                "beautificator": "gigachat-max"
+  }
+}
+:
+{
+        "task_id": " "
+}
+Kandinsky 5 T2V Lite
+4. 
+Эндпоинт предназначен для формирования запросов на генерацию видео по текстовому описанию.
+ 
+ 
+Метод:
+POST
+ 
+URL:
+https://kandinskyapi.sberdevices.ru
+/tasks/k5_video_t2v_lite
+Формат входных данных:
+Поле
+Тип
+Обязательно
+Описание
+Значения
+censor
+boolean
+Нет
+Флаг активации цензуры
+true/false
+
+===== PAGE 3 (obj 30) =====
+params
+object
+Да
+Объект с параметрами генерации
+/query
+string
+Да
+Текстовый промпт для генерации
+/resolution
+string
+Да
+Разрешение картинки
+"768:512"
+"512:768"
+"512:512"
+/beautificator
+string
+Нет
+Параметр отвечающий за включение в пайплайн переписывания промпта при помощи LLM
+"gigachat-max"
+"disabled"
+Структура запроса:
+{
+        "censor": true,
+          "params": {
+                "query": "",
+                "resolution": "768x1280",
+                "beautificator": "gigachat-max"
+  }
+}
+:
+{
+        "task_id": " "
+}
+Kandinsky 6 I2I
+5. 
+Эндпоинт предназначен для формирования запросов на генерацию изображений по входному изображению и текстовому описанию.
+ 
+ 
+Метод:
+POST
+ 
+URL:
+https://kandinskyapi.sberdevices.ru
+/tasks/k6-i2i
+Формат входных данных:
+Поле
+Тип
+Обязательно
+Описание
+Значения
+censor
+boolean
+Нет
+Флаг активации цензуры
+true/false
+params
+object
+Да
+Объект с параметрами генерации
+/image
+array
+Да
+Массив исходных изображений в формате Base64
+. Максимум: 3 файла. Форматы: JPEG, PNG.
+/query
+string
+Да
+Текстовый промпт для генерации
+/beautificator
+string
+Нет
+Параметр отвечающий за включение в пайплайн переписывания промпта при помощи LLM
+"enabled"
+"disabled"
+Структура запроса:
+{
+  "censor": true,
+  "params": {
+          "image": [   
+                "{base64file}",
+                "{base64file}",
+                "{base64file}"
+    ],
+        "query": "                  (    ).  .",
+        "beautificator": "enabled"
+  }
+}
+
+===== PAGE 4 (obj 33) =====
+:
+{
+        "task_id": " "
+}
+Kandinsky 5 I2V HD
+6. 
+Эндпоинт предназначен для формирования запросов на генерацию видео по входному изображению и текстовому описанию.
+ 
+ 
+Метод:
+POST
+ 
+URL:
+https://kandinskyapi.sberdevices.ru
+/tasks/k5-i2v-hd
+Формат входных данных:
+Поле
+Тип
+Обязательно
+Описание
+Значения
+censor
+boolean
+Нет
+Флаг активации цензуры
+true/false
+params
+object
+Да
+Объект с параметрами генерации
+/image
+string
+Да
+Изображение в формате Base64
+. Форматы: JPEG, PNG.
+/query
+string
+Да
+Текстовый промпт для генерации
+/beautificator
+string
+Нет
+Параметр отвечающий за включение в пайплайн переписывания промпта при помощи LLM
+"gigachat-max"
+"disabled"
+Структура запроса:
+{
+  "censor": true,
+  "params": {
+          "image": "{base64file}",
+        "query": "  ",
+        "beautificator": "gigachat-max"
+  }
+}
+:
+{
+        "task_id": " "
+}
+Kandinsky 5 I2V SD
+7. 
+Эндпоинт предназначен для формирования запросов на генерацию видео по входному изображению и текстовому описанию.
+ 
+ 
+Метод:
+POST
+ 
+URL:
+https://kandinskyapi.sberdevices.ru
+/tasks/k5-i2v-sd
+Формат входных данных:
+Поле
+Тип
+Обязательно
+Описание
+Значения
+censor
+boolean
+Нет
+Флаг активации цензуры
+true/false
+params
+object
+Да
+Объект с параметрами генерации
+/image
+string
+Да
+Изображение в формате Base64
+. Форматы: JPEG, PNG.
+/query
+string
+Да
+Текстовый промпт для генерации
+
+===== PAGE 5 (obj 35) =====
+/beautificator
+string
+Нет
+Параметр отвечающий за включение в пайплайн переписывания промпта при помощи LLM
+"gigachat-max"
+"disabled"
+Структура запроса:
+{
+  "censor": true,
+  "params": {
+          "image": "{base64file}",
+        "query": "  ",
+        "beautificator": "gigachat-max"
+  }
+}
+:
+{
+        "task_id": " "
+}
+Kandinsky 5 I2V Lite
+8. 
+Эндпоинт предназначен для формирования запросов на генерацию видео по входному изображению и текстовому описанию.
+ 
+ 
+Метод:
+POST
+ 
+URL:
+https://kandinskyapi.sberdevices.ru
+/tasks/k5-i2v-lite
+Формат входных данных:
+Поле
+Тип
+Обязательно
+Описание
+Значения
+censor
+boolean
+Нет
+Флаг активации цензуры
+true/false
+params
+object
+Да
+Объект с параметрами генерации
+/image
+string
+Да
+Изображение в формате Base64
+. Форматы: JPEG, PNG.
+/query
+string
+Да
+Текстовый промпт для генерации
+/beautificator
+string
+Нет
+Параметр отвечающий за включение в пайплайн переписывания промпта при помощи LLM
+"gigachat-max"
+"disabled"
+Структура запроса:
+{
+  "censor": true,
+  "params": {
+          "image": "{base64file}",
+        "query": "  ",
+        "beautificator": "gigachat-max"
+  }
+}
+:
+{
+        "task_id": " "
+}
+Kandinsky Avatars
+9. 
+
+===== PAGE 6 (obj 38) =====
+Эндпоинт предназначен для формирования запросов на генерацию видео-аватара по входному изображению, аудио голоса и текстовому описанию.
+ 
+ 
+Метод:
+POST
+ 
+URL:
+https://kandinskyapi.sberdevices.ru
+/tasks/giga_avatar
+Формат входных данных:
+Поле
+Тип
+Обязательно
+Описание
+Значения
+censor
+boolean
+Нет
+Флаг активации цензуры
+true/false
+params
+object
+Да
+Объект с параметрами генерации
+/audio
+string
+Да
+Аудио в формате Base64. Форматы: WAV Mono
+/image
+string
+Да
+Изображение в формате Base64
+. Форматы: JPEG, PNG
+/query
+string
+Да
+Текстовый промпт для генерации
+Структура запроса:
+{
+  "censor": true,
+  "params": {
+    "audio": "{base64file}",
+    "image": "{base64file}",
+    "query": "  -  ! ,  -   .     .    -  .   !"
+  }
+}
+:
+{
+        "task_id": " "
+}
+Kandinsky Super Res
+10. 
+Эндпоинт предназначен для формирования запросов на генерацию изображений с увеличенным разрешением.
+ 
+ 
+Метод:
+POST
+ 
+URL:
+https://kandinskyapi.sberdevices.ru
+/tasks/k6_superres
+Формат входных данных:
+Поле
+Тип
+Обязательно
+Описание
+Значения
+censor
+boolean
+Нет
+Флаг активации цензуры
+true/false
+params
+object
+Да
+Объект с параметрами генерации
+/image
+string
+Да
+Изображение в формате Base64
+. Форматы: JPEG, PNG
+/upscale
+int
+Да
+Множитель увеличения разрешения
+2/4
+/one_step_t
+float
+Нет
+Параметр резкости изобрражения
+0-1
+Структура запроса:
+{
+  "censor": true,
+  "params": {
+    "image": "{base64file}",
+    "upscale": 2
+  }
+}
+
+===== PAGE 7 (obj 41) =====
+:
+{
+        "task_id": " "
+}
+Kandinsky 6.5 Preview T2VA
+11. 
+Эндпоинт предназначен для формирования запросов на генерацию видео со аудио дорожкой.
+ 
+ 
+Метод:
+POST
+ 
+URL:
+https://kandinskyapi.sberdevices.ru
+/tasks/kandinsky6.5-preview-t2va
+Формат входных данных:
+Поле
+Тип
+Обязательно
+Описание
+Значения
+censor
+boolean
+Нет
+Флаг активации цензуры
+true/false
+params
+object
+Да
+Объект с параметрами генерации
+/query
+string
+Да
+Текстовый промпт для генерации
+/aspect_ration
+string
+Нет
+Соотношение сторон видео
+"1:1"
+"16:9"
+"9:16"
+/beautificator
+string
+Нет
+Бьютификация промпта при помощи LLM
+"enabled"
+"disabled"
+Структура запроса:
+{
+  "censor": true,
+  "params": {
+        "query": "   ",
+        "aspect_ration": "1:1",
+        "beautificator": "enabled"
+  }
+}
+:
+{
+        "task_id": " "
+}
+Kandinsky 6.5 Preview I2VA
+12. 
+Эндпоинт предназначен для формирования запросов на генерацию видео со аудио дорожкой.
+ 
+ 
+Метод:
+POST
+ 
+URL:
+https://kandinskyapi.sberdevices.ru
+/tasks/kandinsky6.5-preview-i2va
+Формат входных данных:
+Поле
+Тип
+Обязательно
+Описание
+Значения
+censor
+boolean
+Нет
+Флаг активации цензуры
+true/false
+params
+object
+Да
+Объект с параметрами генерации
+/image
+string
+Да
+Изображение в формате Base64
+. Форматы: JPEG, PNG
+/query
+string
+Да
+Текстовый промпт для генерации
+
+===== PAGE 8 (obj 45) =====
+/aspect_ration
+string
+Нет
+Соотношение сторон видео
+"1:1"
+"16:9"
+"9:16"
+/beautificator
+string
+Нет
+Бьютификация промпта при помощи LLM
+"enabled"
+"disabled"
+Структура запроса:
+{
+  "censor": true,
+  "params": {
+    "image": "{base64file}",
+    "query": "   ",
+        "aspect_ration": "1:1",
+        "beautificator": "enabled"
+  }
+}
+:
+{
+        "task_id": " "
+}
+Получение статуса задачи
+13. 
+ 
+ 
+Метод:
+GET
+ 
+/tasks/{task_id}
+URL:
+https://kandinskyapi.sberdevices.ru
+Пример ответа:
+{
+        "status": "processing"
+}
+Получение результата
+14. 
+ 
+ 
+Метод:
+GET
+ 
+}/result
+URL:
+https://kandinskyapi.sberdevices.ru
+/tasks/{task_id
+После получения статуса done и отправки запроса по ссылке получения результата в ответе вернется результат генерации.

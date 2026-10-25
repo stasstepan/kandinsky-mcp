@@ -1,0 +1,46 @@
+# Caddy для Kandinsky MCP.
+#
+# Замените домен на свой. TLS-сертификат Caddy получит сам (ACME), если
+# A-запись домена указывает на этот сервер и порты 80/443 открыты.
+#
+#   caddy validate --config deploy/Caddyfile
+#   caddy run      --config deploy/Caddyfile
+#
+# Адрес сервиса берётся из переменной UPSTREAM:
+#   * Caddy на хосте, сервис в docker с опубликованным портом → 127.0.0.1:8000
+#   * Caddy в том же docker-compose → UPSTREAM=kandinsky-mcp:8000
+# Значение по умолчанию — локальный порт.
+
+kandinsky.example.com {
+	encode zstd gzip
+
+	# Тело запроса: входные картинки идут в base64, это +33 % к размеру файла.
+	# 25 МБ картинка превращается в ~34 МБ JSON, поэтому лимит выше, чем у API.
+	# Лимит самого Kandinsky API (25 МБ decoded) проверяется уже внутри сервиса.
+	request_body {
+		max_size 40MB
+	}
+
+	reverse_proxy {$UPSTREAM:127.0.0.1:8000} {
+		# КРИТИЧНО для MCP Streamable HTTP: без этого Caddy буферизует
+		# SSE-ответ, и клиент не получает события до закрытия соединения.
+		flush_interval -1
+
+		# Долгие стриминговые ответы не должны обрываться по таймауту.
+		transport http {
+			read_timeout 0
+			write_timeout 0
+		}
+	}
+
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

@@ -1,0 +1,14 @@
+# Единые переводы строк: в репозитории и в рабочей копии — LF.
+# Без этого Git на Windows конвертирует файлы в CRLF, и они попадают
+# в контекст сборки Docker-образа такими же. Для Python и shell-скриптов
+# внутри образа это лишний риск.
+* text=auto eol=lf
+
+# Бинарные файлы не трогаем.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.pdf binary
+*.whl binary

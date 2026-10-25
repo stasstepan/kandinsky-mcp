@@ -1,0 +1,71 @@
+services:
+  kandinsky-mcp:
+    build: .
+    image: kandinsky-mcp:latest
+    container_name: kandinsky-mcp
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      MCP_TRANSPORT: http
+      MCP_HOST: 0.0.0.0
+      MCP_HTTP_PORT: "8000"
+      DATA_DIR: /data
+    # Публикуем ТОЛЬКО на loopback: снаружи до сервиса достаёт лишь Caddy,
+    # запущенный на этом же хосте. Порт на 0.0.0.0 не открываем — иначе сервис
+    # окажется в интернете в обход TLS и без реверс-прокси.
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - kandinsky-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Caddy внутри compose — только если на хосте его ещё нет.
+  # Включается профилем, чтобы по умолчанию не конфликтовать с системным
+  # Caddy за порты 80/443:
+  #   docker compose --profile edge up -d
+  # Если Caddy уже стоит на хосте — не запускайте этот сервис, а добавьте
+  # блок из deploy/Caddyfile в существующую конфигурацию.
+  caddy:
+    image: caddy:2-alpine
+    container_name: kandinsky-caddy
+    restart: unless-stopped
+    profiles: ["edge"]
+    depends_on:
+      - kandinsky-mcp
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      # Внутри compose Caddy ходит к сервису по имени, а не по localhost.
+      UPSTREAM: kandinsky-mcp:8000
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  kandinsky-data:
+  caddy-data:
+  caddy-config:
