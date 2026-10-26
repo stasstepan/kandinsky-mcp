@@ -1,12 +1,12 @@
-﻿# Kandinsky MCP
+# Kandinsky MCP
 
 MCP-сервер для генерации изображений через [Kandinsky API](https://kandinskyapi.sberdevices.ru/docs).
 Работает как инструмент агента: Cursor, Windsurf, DeepSeek Harness и любой другой MCP-клиент.
 
-Реализован под **новый асинхронный API** (`/tasks/...`, `Authorization: Bearer`), а не под
-старый FusionBrain (`api-key.fusionbrain.ai`, `X-Key`/`X-Secret`). Подробности о различиях —
-в [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), справка по маршрутам — в
-[docs/api-reference.md](docs/api-reference.md).
+API асинхронный: заявка создаётся, затем опрашивается статус и скачивается результат.
+Сервер берёт эту механику на себя — агенту остаётся один вызов инструмента.
+Устройство описано в [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), справка
+по маршрутам — в [docs/api-reference.md](docs/api-reference.md).
 
 ## Возможности
 

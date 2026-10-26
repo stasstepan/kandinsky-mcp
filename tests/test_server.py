@@ -1,4 +1,4 @@
-"""Сборка сервера: состав инструментов, доступ по ключу, доставка файлов."""
+﻿"""Сборка сервера: состав инструментов, доступ по ключу, доставка файлов."""
 
 from __future__ import annotations
 
@@ -276,7 +276,7 @@ async def test_expired_signature_is_rejected(bundle) -> None:
     assert sign is not None
 
 
-# --- return_base64 (по спецификации заказчика) -------------------------------
+# --- return_base64: выдача файла без скачивания по ссылке --------------------
 
 
 def make_saved_task(bundle, task_id="900", payload=None, mime="image/png", ext=".png"):
