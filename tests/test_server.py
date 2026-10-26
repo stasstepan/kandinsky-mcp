@@ -444,3 +444,24 @@ def test_clamp_wait_keeps_reasonable_values() -> None:
     assert clamp_wait(0) == 0
     assert clamp_wait(10) == 10
     assert clamp_wait(-5) == 0
+
+
+async def test_stats_reports_monthly_usage(bundle) -> None:
+    """Эндпоинт /stats считает расход по маршрутам за текущий месяц."""
+    make_saved_task(bundle, task_id="920")
+
+    async with asgi_client(bundle) as client:
+        response = await client.get("/stats", headers={"X-API-Key": "secret-key"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["month"]
+    assert body["total_created"] >= 1
+    assert "note" in body
+    assert "не отдаёт" in body["note"]
+
+
+async def test_stats_requires_key(bundle) -> None:
+    async with asgi_client(bundle) as client:
+        response = await client.get("/stats")
+    assert response.status_code == 401

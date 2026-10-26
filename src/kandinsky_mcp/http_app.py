@@ -1,4 +1,4 @@
-"""HTTP-приложение: MCP по /mcp, файлы по /files, health-проверки.
+﻿"""HTTP-приложение: MCP по /mcp, файлы по /files, health-проверки.
 
 Собирается из приложения, которое отдаёт сам MCP SDK, плюс собственные роуты
 и два middleware: ключ доступа и ограничение частоты.
@@ -6,8 +6,10 @@
 
 from __future__ import annotations
 
+import calendar
 import time
 from pathlib import Path
+from typing import Any
 
 from mcp.server import MCPServer
 from starlette.applications import Starlette
@@ -80,6 +82,16 @@ def build_app(mcp: MCPServer, ctx: AppContext) -> Starlette:
             return JSONResponse({"error": "not_found"}, status_code=404)
         return FileResponse(path, media_type=_guess_mime(path))
 
+    @mcp.custom_route("/stats", methods=["GET"])
+    async def stats(request: Request) -> Response:
+        """Расход по маршрутам за текущий месяц.
+
+        API не отдаёт остаток квоты: эндпоинта нет, а лимит виден только
+        в тексте ошибки 429. Здесь — наши собственные счётчики по созданным
+        задачам, то есть фактический расход через этот сервер.
+        """
+        return JSONResponse(build_usage(ctx))
+
     app = mcp.streamable_http_app(
         streamable_http_path=settings.mcp_path,
         max_request_body_size=settings.mcp_max_body_bytes,
@@ -93,6 +105,42 @@ def build_app(mcp: MCPServer, ctx: AppContext) -> Starlette:
         limiter=RateLimiter(settings.rate_limit_per_minute),
     )
     return app
+
+
+def build_usage(ctx: AppContext) -> dict[str, Any]:
+    """Считает расход по маршрутам за текущий календарный месяц (UTC)."""
+    month = time.strftime("%Y-%m", time.gmtime())
+    month_start = calendar.timegm(time.strptime(month + "-01", "%Y-%m-%d"))
+
+    routes: dict[str, dict[str, Any]] = {}
+    for record in ctx.store.list_tasks(limit=10_000):
+        if record.created_at < month_start:
+            continue
+        bucket = routes.setdefault(
+            record.route,
+            {"created": 0, "saved": 0, "failed": 0, "in_progress": 0, "last_error": None},
+        )
+        bucket["created"] += 1
+        if record.status == "saved":
+            bucket["saved"] += 1
+        elif record.status == "failed":
+            bucket["failed"] += 1
+            if record.error:
+                bucket["last_error"] = record.error[:200]
+        elif not record.is_terminal:
+            bucket["in_progress"] += 1
+
+    return {
+        "month": month,
+        "routes": routes,
+        "total_created": sum(b["created"] for b in routes.values()),
+        "note": (
+            "Это расход через данный сервер, а не остаток квоты: API не отдаёт "
+            "остаток — эндпоинта нет. Лимит и остаток видны только в тексте "
+            "ошибки 429 при создании задачи («10/10 requests this month»). "
+            "Отклонённые по квоте запросы задачу не создают и здесь не считаются."
+        ),
+    }
 
 
 def _guess_mime(path: Path) -> str:
