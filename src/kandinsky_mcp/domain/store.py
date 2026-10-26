@@ -208,6 +208,36 @@ class FileStore:
                 return record
         return None
 
+    # --- подсказки о квоте -------------------------------------------------
+
+    def save_quota(self, route: str, quota: dict[str, Any]) -> None:
+        """Запоминает последние сведения о квоте из ответа 429.
+
+        API не отдаёт остаток отдельным методом, но в 429 присылает
+        структурированные `used` и `limit`. Сохраняем их, чтобы показать
+        в /stats без новых запросов к API.
+        """
+        path = self.data_dir / "quota.json"
+        data: dict[str, Any] = {}
+        if path.exists():
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                data = {}
+        data[route] = {**quota, "checked_at": _now()}
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
+
+    def load_quota(self) -> dict[str, Any]:
+        path = self.data_dir / "quota.json"
+        if not path.exists():
+            return {}
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {}
+
     # --- результаты -------------------------------------------------------
 
     def store_result(self, record: TaskRecord, content: bytes, mime: str, extension: str) -> StoredFile:

@@ -155,9 +155,13 @@ def result_with_images(
     return CallToolResult(content=blocks, structured_content=data)
 
 
-def error_result(code: str, message: str, hint: str = "") -> CallToolResult:
+def error_result(
+    code: str, message: str, hint: str = "", extra: dict[str, Any] | None = None
+) -> CallToolResult:
     """Ошибка, которую модель прочитает и сможет обработать (is_error=True)."""
-    payload = {"code": code, "message": message, "hint": hint}
+    payload: dict[str, Any] = {"code": code, "message": message, "hint": hint}
+    if extra:
+        payload.update(extra)
     text = f"[{code}] {message}" + (f"\n{hint}" if hint else "")
     return CallToolResult(
         content=[TextContent(type="text", text=text)],

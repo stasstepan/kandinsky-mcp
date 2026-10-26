@@ -1,4 +1,4 @@
-﻿"""Ошибки Kandinsky API, переведённые в доменные коды.
+"""Ошибки Kandinsky API, переведённые в доменные коды.
 
 Смысл слоя: агент должен получить не «HTTP 422», а код и подсказку, по которой
 можно действовать. Модель читает `is_error`-контент и на его основе решает,
@@ -111,6 +111,9 @@ class KandinskyError(Exception):
     status: int | None = None
     hint: str = ""
     retryable: bool = False
+    # Структурированные сведения о квоте из ответа 429:
+    # {"type": "monthly", "used": 10, "limit": 10}
+    quota: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if not self.hint:
@@ -128,13 +131,16 @@ class KandinskyError(Exception):
         return "\n".join(parts)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "code": self.code,
             "message": self.message,
             "hint": self.hint,
             "status": self.status,
             "retryable": self.retryable,
         }
+        if self.quota:
+            data["quota"] = self.quota
+        return data
 
 
 def _describe_validation(payload: Any) -> str:
@@ -188,11 +194,20 @@ def classify(
         return KandinskyError(INPUT_TOO_LARGE, detail or "Файл слишком большой", status)
 
     if status == 429:
+        # API присылает не только текст, но и структурные поля:
+        # {"code": "LIMIT_EXHAUSTED", "type": "monthly", "used": 10, "limit": 10}
+        # Их сохраняем отдельно — по ним считается остаток квоты.
         qtype = ""
+        quota: dict[str, Any] | None = None
         if isinstance(payload, dict) and isinstance(payload.get("detail"), dict):
-            qtype = str(payload["detail"].get("type", ""))
+            source = payload["detail"]
+            qtype = str(source.get("type", ""))
+            # quota заполняем только когда есть чем считать остаток:
+            # для type=rate полей used/limit не бывает.
+            if "used" in source or "limit" in source:
+                quota = {k: source[k] for k in ("type", "used", "limit") if k in source}
         code = _QUOTA_BY_TYPE.get(qtype, QUOTA_RATE)
-        return KandinskyError(code, detail or "Лимит исчерпан", status)
+        return KandinskyError(code, detail or "Лимит исчерпан", status, quota=quota)
 
     if status == 422:
         # Порядок важен: сообщение про недоступность цензора тоже содержит

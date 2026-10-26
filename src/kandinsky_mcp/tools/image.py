@@ -1,4 +1,4 @@
-"""Инструменты генерации изображений.
+﻿"""Инструменты генерации изображений.
 
 Важное правило: ни одно исключение не должно вылетать из тула. MCP SDK
 превращает необработанное исключение в неинформативное «Error executing tool»,
@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from typing import Annotated, Any, Literal
 
@@ -140,7 +141,13 @@ async def submit(
         )
         record = await wait_for_local_terminal(ctx, record.task_id, effective_wait)
     except KandinskyError as exc:
-        return error_result(exc.code, exc.message, exc.hint)
+        if exc.quota:
+            # 429 приходит со структурными used/limit — сохраняем для /stats.
+            with contextlib.suppress(OSError):
+                ctx.store.save_quota(spec.route, exc.quota)
+        return error_result(
+            exc.code, exc.message, exc.hint, extra={"quota": exc.quota} if exc.quota else None
+        )
 
     if deduplicated:
         collected.append(

@@ -145,3 +145,18 @@ def test_task_json_is_readable(store: FileStore) -> None:
     payload = json.loads((store.tasks_dir / "1.json").read_text(encoding="utf-8"))
     assert payload["route"] == "k6-image-t2i"
     assert payload["prompt"] == "закат"  # не ASCII-экранировано
+
+
+def test_quota_hint_roundtrip(store: FileStore) -> None:
+    """Сведения из 429 сохраняются между вызовами и переживают рестарт."""
+    store.save_quota("k6-image-t2i", {"type": "monthly", "used": 10, "limit": 10})
+
+    loaded = store.load_quota()
+
+    assert loaded["k6-image-t2i"]["used"] == 10
+    assert loaded["k6-image-t2i"]["limit"] == 10
+    assert loaded["k6-image-t2i"]["checked_at"] > 0
+
+
+def test_quota_hint_missing_file(store: FileStore) -> None:
+    assert store.load_quota() == {}

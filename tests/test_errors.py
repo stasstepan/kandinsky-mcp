@@ -111,3 +111,25 @@ def test_agent_text_contains_code_message_hint_and_status() -> None:
 
 def test_fatal_and_retryable_sets_do_not_overlap() -> None:
     assert not (e.RETRYABLE & e.FATAL)
+
+
+def test_429_quota_carries_structured_limits() -> None:
+    """API присылает used/limit структурно — их надо сохранять, а не терять."""
+    payload = {
+        "detail": {
+            "code": "LIMIT_EXHAUSTED",
+            "type": "monthly",
+            "used": 10,
+            "limit": 10,
+            "message": "Monthly route quota exhausted for k6-image-t2i: 10/10 requests this month",
+        }
+    }
+    err = e.classify(429, payload)
+    assert err.code == e.QUOTA_MONTHLY
+    assert err.quota == {"type": "monthly", "used": 10, "limit": 10}
+    assert err.to_dict()["quota"]["limit"] == 10
+
+
+def test_429_without_limits_has_no_quota_block() -> None:
+    err = e.classify(429, {"detail": {"code": "LIMIT_EXHAUSTED", "type": "rate"}})
+    assert err.quota is None

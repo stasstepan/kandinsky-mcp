@@ -130,15 +130,31 @@ def build_usage(ctx: AppContext) -> dict[str, Any]:
         elif not record.is_terminal:
             bucket["in_progress"] += 1
 
+    # Подмешиваем последние известные сведения о квоте из ответов 429.
+    for route, info in ctx.store.load_quota().items():
+        bucket = routes.setdefault(
+            route,
+            {"created": 0, "saved": 0, "failed": 0, "in_progress": 0, "last_error": None},
+        )
+        used, limit = info.get("used"), info.get("limit")
+        bucket["quota"] = {
+            "type": info.get("type"),
+            "used": used,
+            "limit": limit,
+            "remaining": max(0, limit - used) if isinstance(used, int) and isinstance(limit, int) else None,
+            "checked_at": info.get("checked_at"),
+        }
+
     return {
         "month": month,
         "routes": routes,
         "total_created": sum(b["created"] for b in routes.values()),
         "note": (
-            "Это расход через данный сервер, а не остаток квоты: API не отдаёт "
-            "остаток — эндпоинта нет. Лимит и остаток видны только в тексте "
-            "ошибки 429 при создании задачи («10/10 requests this month»). "
-            "Отклонённые по квоте запросы задачу не создают и здесь не считаются."
+            "created/saved/failed — расход через этот сервер за текущий месяц. "
+            "Остаток API отдельным методом не отдаёт, но в ответе 429 присылает "
+            "used и limit — они попадают в поле quota (появляется после первого "
+            "отказа по квоте). Отклонённые запросы задачу не создают и в created "
+            "не считаются."
         ),
     }
 

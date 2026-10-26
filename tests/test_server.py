@@ -465,3 +465,17 @@ async def test_stats_requires_key(bundle) -> None:
     async with asgi_client(bundle) as client:
         response = await client.get("/stats")
     assert response.status_code == 401
+
+
+async def test_stats_shows_remaining_quota_from_last_429(bundle) -> None:
+    """После отказа по квоте /stats показывает used/limit/remaining."""
+    bundle.ctx.store.save_quota("k6-image-t2i", {"type": "monthly", "used": 10, "limit": 10})
+
+    async with asgi_client(bundle) as client:
+        response = await client.get("/stats", headers={"X-API-Key": "secret-key"})
+
+    quota = response.json()["routes"]["k6-image-t2i"]["quota"]
+    assert quota["type"] == "monthly"
+    assert quota["used"] == 10
+    assert quota["limit"] == 10
+    assert quota["remaining"] == 0
