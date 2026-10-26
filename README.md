@@ -1,7 +1,7 @@
 # Kandinsky MCP
 
 MCP-сервер для генерации изображений через [Kandinsky API](https://kandinskyapi.sberdevices.ru/docs).
-Работает как инструмент агента: Cursor, Windsurf, DeepSeek Harness и любой другой MCP-клиент.
+Работает как инструмент агента: GigaCowork, Cursor, DeepSeek Harness и любой другой MCP-клиент.
 
 API асинхронный: заявка создаётся, затем опрашивается статус и скачивается результат.
 Сервер берёт эту механику на себя — агенту остаётся один вызов инструмента.
@@ -77,6 +77,10 @@ curl -s localhost:8000/healthz
 Для локальной проверки раскомментируйте `ports` в `docker-compose.yml`.
 
 ### Подключение к агенту
+
+Основной сценарий — GigaCowork ([cowork.ru](https://cowork.ru)): коннектор типа
+`Streamable HTTP`, адрес `https://<ваш-домен>/mcp`, авторизация «HTTP-заголовки»,
+заголовок `X-API-Key` со значением ключа.
 
 DeepSeek Harness — `~/.dsh/profiles/desktop/cordis.patch.yml`:
 
