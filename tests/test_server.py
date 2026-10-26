@@ -420,3 +420,27 @@ def test_load_image_does_not_escape_storage(bundle) -> None:
     """Внешние пути через «свои» префиксы не читаем."""
     with pytest.raises(ValueError):
         bundle.ctx.load_image("results/../../etc/passwd")
+
+
+# --- ожидание внутри вызова не должно превышать таймаут клиента --------------
+
+
+def test_clamp_wait_limits_long_waits() -> None:
+    """120 секунд ожидания бесполезны: клиент обрывает вызов на 60.
+
+    На живом кейсе агент передал wait_seconds=120 и получил
+    «Timed out while waiting for response to ClientRequest. Waited 60.0 seconds».
+    """
+    from kandinsky_mcp.tools.image import WAIT_EFFECTIVE_MAX, clamp_wait
+
+    assert WAIT_EFFECTIVE_MAX < 60
+    assert clamp_wait(120) == WAIT_EFFECTIVE_MAX
+    assert clamp_wait(WAIT_EFFECTIVE_MAX + 1) == WAIT_EFFECTIVE_MAX
+
+
+def test_clamp_wait_keeps_reasonable_values() -> None:
+    from kandinsky_mcp.tools.image import clamp_wait
+
+    assert clamp_wait(0) == 0
+    assert clamp_wait(10) == 10
+    assert clamp_wait(-5) == 0

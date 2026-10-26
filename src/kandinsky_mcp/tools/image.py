@@ -1,4 +1,4 @@
-﻿"""Инструменты генерации изображений.
+"""Инструменты генерации изображений.
 
 Важное правило: ни одно исключение не должно вылетать из тула. MCP SDK
 превращает необработанное исключение в неинформативное «Error executing tool»,
@@ -24,9 +24,23 @@ from .context import AppContext, error_result, result_with_images
 
 WAIT_MAX = 300
 
+# Фактический предел ожидания внутри одного вызова. Клиенты обычно обрывают
+# запрос к инструменту на 60 секундах, и тогда агент видит «Timed out while
+# waiting for response», хотя задача жива. Держимся ниже этого порога.
+WAIT_EFFECTIVE_MAX = 45
+
 # Значение по умолчанию берётся из настроек (DEFAULT_WAIT_SECONDS), чтобы его
 # можно было менять без пересборки: см. register_image_tools.
 WAIT_FALLBACK = 25
+
+
+def clamp_wait(seconds: float) -> float:
+    """Ограничивает ожидание разумным пределом.
+
+    `wait_seconds` больше 45 бессмысленен: клиент всё равно оборвёт вызов
+    раньше, а задача продолжит считаться — её заберут через task_result.
+    """
+    return min(max(0.0, float(seconds)), WAIT_EFFECTIVE_MAX)
 
 
 async def wait_for_local_terminal(ctx: AppContext, task_id: str, seconds: float) -> TaskRecord:
@@ -110,13 +124,21 @@ async def submit(
 ) -> CallToolResult:
     """Общий путь: валидация → создание задачи → ожидание → ответ."""
     collected = list(warnings or [])
+    effective_wait = clamp_wait(wait_seconds)
+    if wait_seconds > WAIT_EFFECTIVE_MAX:
+        collected.append(
+            f"Ждём не больше {WAIT_EFFECTIVE_MAX} с за вызов: клиенты обычно обрывают "
+            "запрос к инструменту на 60 секундах, и тогда вы получите ошибку таймаута, "
+            "хотя задача продолжится. Если результат не готов, вернётся task_id — "
+            "заберите его позже через kandinsky_task_result."
+        )
     try:
         cleaned = normalize_params(spec, params)
         effective_censor = ctx.settings.default_censor if censor is None else censor
         record, deduplicated = await ctx.manager.create_ex(
             spec.route, cleaned, censor=effective_censor, prompt=prompt, force_new=force_new
         )
-        record = await wait_for_local_terminal(ctx, record.task_id, wait_seconds)
+        record = await wait_for_local_terminal(ctx, record.task_id, effective_wait)
     except KandinskyError as exc:
         return error_result(exc.code, exc.message, exc.hint)
 
