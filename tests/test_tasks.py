@@ -325,12 +325,51 @@ async def test_failed_task_is_not_reused(store: FileStore) -> None:
     await manager.close()
 
 
-async def test_dedupe_window_zero_disables_protection(store: FileStore) -> None:
-    client = CountingClient()
+async def test_force_new_is_the_only_way_past_a_running_task(store: FileStore) -> None:
+    """Выполняющуюся задачу переиспользуем всегда; обойти можно только force_new."""
+    client = CountingClient(["processing"])
     manager = make_manager(client, store, dedupe_window=0)
 
-    await manager.create("k6-image-t2i", {"query": "кот"}, censor=True, prompt="кот")
-    await manager.create("k6-image-t2i", {"query": "кот"}, censor=True, prompt="кот")
+    first = await manager.create("k6-image-t2i", {"query": "кот"}, censor=True, prompt="кот")
+    await asyncio.sleep(0.05)
+    again = await manager.create("k6-image-t2i", {"query": "кот"}, censor=True, prompt="кот")
+    forced = await manager.create(
+        "k6-image-t2i", {"query": "кот"}, censor=True, prompt="кот", force_new=True
+    )
 
+    assert again.task_id == first.task_id
+    assert forced.task_id != first.task_id
+    assert len(client.created) == 2
+    await manager.close()
+
+
+async def test_running_task_is_reused_beyond_the_window(store: FileStore) -> None:
+    """Пока задача выполняется, повтор того же запроса не занимает второй слот.
+
+    У API всего две параллельные задачи: два «вечных» queued-повтора
+    блокировали новые генерации с ошибкой «2/2 active tasks».
+    """
+    client = CountingClient(["processing"])
+    manager = make_manager(client, store, dedupe_window=0)   # окно выключено
+
+    first = await manager.create("k6-image-t2i", {"query": "кот"}, censor=True, prompt="кот")
+    await asyncio.sleep(0.05)
+    second = await manager.create("k6-image-t2i", {"query": "кот"}, censor=True, prompt="кот")
+
+    assert second.task_id == first.task_id
+    assert len(client.created) == 1
+    await manager.close()
+
+
+async def test_finished_task_is_not_reused_beyond_the_window(store: FileStore) -> None:
+    """Готовая задача вне окна не мешает сделать новую картинку."""
+    client = CountingClient(["done"])
+    manager = make_manager(client, store, dedupe_window=0)
+
+    first = await manager.create("k6-image-t2i", {"query": "кот"}, censor=True, prompt="кот")
+    await wait_terminal(store, first.task_id)
+    second = await manager.create("k6-image-t2i", {"query": "кот"}, censor=True, prompt="кот")
+
+    assert second.task_id != first.task_id
     assert len(client.created) == 2
     await manager.close()

@@ -183,23 +183,28 @@ class FileStore:
         prompt: str,
         window_seconds: float,
     ) -> TaskRecord | None:
-        """Ищет недавнюю задачу с теми же параметрами.
+        """Ищет задачу с теми же параметрами, которую можно переиспользовать.
 
-        Нужно против повторов на стороне клиента: если MCP-клиент не дождался
-        ответа и отправил тот же вызов ещё раз, мы возвращаем уже созданную
-        задачу, а не жжём квоту второй раз.
+        Два случая:
+          1. повтор в пределах окна — клиент не дождался ответа и отправил
+             тот же вызов ещё раз;
+          2. задача с таким же запросом всё ещё выполняется (queued/processing) —
+             возвращаем её независимо от возраста.
+
+        Второй случай важен из-за лимита параллельных задач (у API их всего две):
+        повтор, созданный через пару минут, занимал второй слот, и новые
+        генерации начинали отбиваться с «2/2 active tasks».
         """
-        if window_seconds <= 0:
-            return None
-
         signature = task_signature(params, prompt)
-        cutoff = _now() - window_seconds
+        cutoff = _now() - window_seconds if window_seconds > 0 else None
+
         for record in self.list_tasks(limit=200):
-            if record.route != route or record.created_at < cutoff:
+            if record.route != route or record.status == "failed":
                 continue
-            if record.status == "failed":
-                continue  # провал повторяем честно
-            if record.signature and record.signature == signature:
+            if not record.signature or record.signature != signature:
+                continue
+            still_running = not record.is_terminal
+            if still_running or (cutoff is not None and record.created_at >= cutoff):
                 return record
         return None
 

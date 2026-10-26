@@ -171,3 +171,12 @@ def test_sync_marks_route_unavailable_when_absent_from_spec() -> None:
     registry.sync_with_openapi({"paths": {}})
     assert all(not r.available for r in registry.all())
     assert registry.exposed() == ()
+
+
+def test_gigachat_max_not_offered_for_k6_t2i() -> None:
+    """Значение есть в openapi.json, но воркер его отвергает — не предлагаем."""
+    from kandinsky_mcp.api.routes import K6_IMAGE_T2I
+
+    values = K6_IMAGE_T2I.enums["beautificator"]
+    assert "gigachat-max" not in values
+    assert set(values) == {"enabled", "disabled"}

@@ -91,7 +91,11 @@ K6_IMAGE_T2I = RouteSpec(
     allowed=frozenset({"query", "resolution", "beautificator"}),
     enums={
         "resolution": ("1024x1024", "768x768", "768x1280", "auto", "1280x768"),
-        "beautificator": ("enabled", "disabled", "gigachat-max"),
+        # Значение "gigachat-max" есть в openapi.json, но воркер его не принимает:
+        # «wrong value type for field beatificator: should be Literal instead of
+        # value gigachat-max». Три задачи сгорели на этом 24.10.2026, поэтому
+        # в реестре оставляем только реально работающие значения.
+        "beautificator": ("enabled", "disabled"),
     },
     defaults={"resolution": "1024x1024"},
     exposed=True,
