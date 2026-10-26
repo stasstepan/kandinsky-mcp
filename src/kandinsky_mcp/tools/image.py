@@ -87,8 +87,10 @@ def build_payload(
         )
     else:
         payload["next"] = (
-            f"Генерация ещё идёт. Проверьте kandinsky_task_status(task_id={record.task_id}) "
-            "или запросите kandinsky_task_result позже — файл скачается автоматически."
+            f"Генерация ещё идёт. Файл скачается фоновым поллером сам — повторять "
+            f"генерацию не нужно. Опрашивайте не чаще раза в 30 секунд: "
+            f"kandinsky_task_result(task_id={record.task_id}) отдаст готовый файл. "
+            "Каждый вызов — отдельный запрос, частый опрос упирается в лимит."
         )
     if warnings:
         payload["warnings"] = warnings

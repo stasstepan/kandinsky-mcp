@@ -1,4 +1,4 @@
-# Kandinsky MCP
+﻿# Kandinsky MCP
 
 MCP-сервер для генерации изображений через [Kandinsky API](https://kandinskyapi.sberdevices.ru/docs).
 Работает как инструмент агента: Cursor, Windsurf, DeepSeek Harness и любой другой MCP-клиент.

@@ -141,3 +141,45 @@ def test_expired_signature_rejected() -> None:
     query, _ = sign_file("secret", "results/a.png", 1)
     sig = query.split("sig=")[1]
     assert verify_file("secret", "results/a.png", "1", sig) is False
+
+
+def test_rate_limit_returns_retry_after() -> None:
+    """429 без Retry-After ломает MCP-сессию: клиент считает её мёртвой.
+
+    На живом кейсе агент сделал 32 POST в минуту, получил 429 и потерял
+    сессию с «client session is not running».
+    """
+    import asyncio
+
+    import httpx
+    from starlette.applications import Starlette
+    from starlette.responses import JSONResponse
+    from starlette.routing import Route
+
+    from kandinsky_mcp.auth import ApiKeyMiddleware, RateLimiter, RateLimitMiddleware
+
+    async def endpoint(request):
+        return JSONResponse({"ok": True})
+
+    inner = Starlette(routes=[Route("/mcp", endpoint, methods=["POST"])])
+    limited = RateLimitMiddleware(inner, limiter=RateLimiter(2))
+    app = ApiKeyMiddleware(limited, api_key=KEY)
+
+    async def run():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as c:
+            return [await c.post("/mcp", headers={"X-API-Key": KEY}) for _ in range(3)]
+
+    first, second, third = asyncio.run(run())
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert third.status_code == 429
+    assert third.headers["retry-after"] == "5"
+    assert "rate_limited" in third.text
+
+
+def test_rate_limit_default_allows_agent_polling() -> None:
+    """Умолчание должно быть с запасом: агент опрашивает статус десятками запросов."""
+    from kandinsky_mcp.config import Settings
+
+    assert Settings.model_fields["rate_limit_per_minute"].default >= 100

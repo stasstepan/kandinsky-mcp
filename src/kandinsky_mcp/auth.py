@@ -172,12 +172,19 @@ class RateLimitMiddleware:
             return
 
         if not self.limiter.allow(path):
+            # Отвечаем 429, но с Retry-After: MCP-клиент без этой подсказки
+            # считает сессию сломанной и падает с «client session is not running».
             response = JSONResponse(
                 {
                     "error": "rate_limited",
-                    "hint": f"Не больше {self.limiter.per_minute} запросов в минуту на эндпоинт",
+                    "hint": (
+                        f"Не больше {self.limiter.per_minute} запросов в минуту на эндпоинт. "
+                        "Подождите и повторите; статус задачи можно не опрашивать — "
+                        "результат скачивается фоновым поллером."
+                    ),
                 },
                 status_code=429,
+                headers={"Retry-After": "5"},
             )
             await response(scope, receive, send)
             return

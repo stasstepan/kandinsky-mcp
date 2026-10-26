@@ -36,7 +36,11 @@ class Settings(BaseSettings):
     file_secret: SecretStr = SecretStr("")
     public_base_url: str = "http://127.0.0.1:8000"
     file_url_ttl_seconds: int = 7 * 24 * 3600
-    rate_limit_per_minute: int = 30
+    # Лимит на POST-запросы. Значение с запасом: каждый вызов инструмента —
+    # это POST, и агент, опрашивающий статус, легко упирался в прежние 30/мин.
+    # На живом кейсе агент делал 32 POST в минуту и получал 429, после чего
+    # MCP-сессия рвалась с «client session is not running».
+    rate_limit_per_minute: int = 120
 
     # --- Хранилище ---
     data_dir: Path = Path("/data")
