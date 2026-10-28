@@ -136,6 +136,11 @@ class TaskManager:
             signature=task_signature(params, prompt),
         )
         self._store.save_task(record)
+        # Задача создана — значит квота маршрута не исчерпана. Убираем подсказку
+        # из последнего 429, иначе /stats показывает по маршруту remaining=0
+        # и после того, как лимит на стороне API сбросили.
+        with contextlib.suppress(OSError):
+            self._store.clear_quota(route)
         self.counters.created += 1
         self._spawn(task_id)
         return record, False

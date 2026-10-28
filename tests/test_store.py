@@ -160,3 +160,31 @@ def test_quota_hint_roundtrip(store: FileStore) -> None:
 
 def test_quota_hint_missing_file(store: FileStore) -> None:
     assert store.load_quota() == {}
+
+
+def test_clear_quota_after_success(store: FileStore) -> None:
+    """Успешная генерация снимает подсказку «квота исчерпана».
+
+    Живой случай: API сбросил месячный лимит, k6 снова работал, а /stats
+    продолжал показывать used=limit и remaining=0 — потому что запись из
+    последнего 429 никто не удалял.
+    """
+    store.save_quota("k6-image-t2i", {"type": "monthly", "used": 10, "limit": 10})
+    store.save_quota("k5-image-t2i", {"type": "monthly", "used": 3, "limit": 20})
+
+    store.clear_quota("k6-image-t2i")
+
+    loaded = store.load_quota()
+    assert "k6-image-t2i" not in loaded  # сброшенный маршрут больше не висит
+    assert loaded["k5-image-t2i"]["used"] == 3  # соседний маршрут не тронут
+
+
+def test_clear_quota_without_hint(store: FileStore) -> None:
+    """Сброс без файла и без записи по маршруту — тихая операция."""
+    store.clear_quota("k6-image-t2i")  # файла ещё нет
+
+    store.save_quota("k5-image-t2i", {"type": "monthly", "used": 1, "limit": 20})
+    store.clear_quota("k6-image-t2i")  # есть файл, нет нужного маршрута
+
+    assert store.load_quota()["k5-image-t2i"]["used"] == 1
+

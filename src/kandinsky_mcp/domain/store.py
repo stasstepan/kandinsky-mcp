@@ -238,6 +238,32 @@ class FileStore:
         except (json.JSONDecodeError, OSError):
             return {}
 
+    def clear_quota(self, route: str) -> None:
+        """Забывает подсказку о квоте после успешной генерации.
+
+        Запись появляется только из ответа 429 и раньше не удалялась никогда:
+        после того как API сбросил лимит, /stats продолжал показывать
+        `used=limit`, `remaining=0` при полностью рабочем маршруте — на живом
+        случае k6 «висел исчерпанным» сутки, хотя генерации проходили.
+        Успешное создание задачи само доказывает, что квота не исчерпана.
+        """
+        path = self.data_dir / "quota.json"
+        if not path.exists():
+            return
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return
+        if route not in data:
+            return
+        data.pop(route, None)
+        if not data:
+            path.unlink(missing_ok=True)
+            return
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
+
     # --- результаты -------------------------------------------------------
 
     def store_result(self, record: TaskRecord, content: bytes, mime: str, extension: str) -> StoredFile:
