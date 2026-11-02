@@ -124,6 +124,11 @@ class FileStore:
 
     def save_task(self, record: TaskRecord) -> None:
         record.updated_at = _now()
+        # Подпись запроса нужна для защиты от повторов. Заполняем её здесь же,
+        # чтобы запись всегда была самодостаточной: задача, сохранённая без
+        # подписи, иначе навсегда выпадает из дедупа.
+        if not record.signature:
+            record.signature = task_signature(record.params, record.prompt)
         path = self._task_path(record.task_id)
         tmp = path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(record.to_json(), ensure_ascii=False, indent=2), encoding="utf-8")
@@ -201,10 +206,37 @@ class FileStore:
         for record in self.list_tasks(limit=200):
             if record.route != route or record.status == "failed":
                 continue
-            if not record.signature or record.signature != signature:
+            if (record.signature or task_signature(record.params, record.prompt)) != signature:
                 continue
             still_running = not record.is_terminal
             if still_running or (cutoff is not None and record.created_at >= cutoff):
+                return record
+        return None
+
+    def find_running_duplicate(
+        self,
+        *,
+        params: dict[str, Any],
+        prompt: str,
+        kind: str | None = None,
+    ) -> TaskRecord | None:
+        """Ищет ту же задачу, которая ещё считается, но на **другом** маршруте.
+
+        Клиент повторяет запрос с другой моделью, не дождавшись результата:
+        k6 считается дольше 45 секунд, вызов возвращает task_id, и агент вместо
+        опроса запускает тот же промпт на k5. Один запрос не должен стоить двух
+        генераций, поэтому отдаём уже считающуюся задачу, какой бы маршрут у неё
+        ни был. Завершённые задачи сюда не попадают: если картинка уже готова,
+        повтор с другой моделью — осознанный выбор, и `force_new` тут не нужен.
+        """
+        signature = task_signature(params, prompt)
+
+        for record in self.list_tasks(limit=200):
+            if record.is_terminal or record.status == "failed":
+                continue
+            if kind is not None and record.kind != kind:
+                continue
+            if (record.signature or task_signature(record.params, record.prompt)) == signature:
                 return record
         return None
 

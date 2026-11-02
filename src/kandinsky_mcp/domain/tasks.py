@@ -123,6 +123,22 @@ class TaskManager:
                 )
                 return existing, True
 
+            # Тот же запрос уже считается на другом маршруте: агент повторил
+            # вызов с другой моделью, не дождавшись результата. Второй платной
+            # генерации быть не должно — возвращаем считающуюся задачу.
+            running = self._store.find_running_duplicate(
+                params=params, prompt=prompt, kind=spec.kind
+            )
+            if running is not None:
+                self.counters.deduped += 1
+                log.info(
+                    "тот же запрос считается на %s: возвращаю задачу %s вместо новой "
+                    "(экономия квоты)",
+                    running.route,
+                    running.task_id,
+                )
+                return running, True
+
         task_id = await self._client.create_task(route, params, censor=censor)
 
         record = TaskRecord(

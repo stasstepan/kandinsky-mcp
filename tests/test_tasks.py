@@ -325,6 +325,55 @@ async def test_failed_task_is_not_reused(store: FileStore) -> None:
     await manager.close()
 
 
+async def test_same_prompt_on_other_route_reuses_running_task(store: FileStore) -> None:
+    """Один запрос — одна генерация, даже если клиент сменил модель, не дождавшись.
+
+    Живой случай 02.11.2026: k6 считался 67 с, клиент получил task_id на 45-й
+    секунде и запустил тот же промпт на k5 — вторая платная генерация.
+    """
+    client = CountingClient(["processing"])  # задача «крутится» и не завершается
+    manager = make_manager(client, store)
+
+    k6 = await manager.create("k6-image-t2i", {"query": "кот"}, censor=True, prompt="кот")
+    k5 = await manager.create("k5-image-t2i", {"query": "кот"}, censor=True, prompt="кот")
+
+    assert k5.task_id == k6.task_id, "должна вернуться уже считающаяся задача"
+    assert k5.route == "k6-image-t2i", "маршрут остаётся исходным"
+    assert len(client.created) == 1, "вторая генерация не должна создаваться"
+    assert manager.counters.deduped == 1
+    await manager.close()
+
+
+async def test_finished_task_on_other_route_is_not_reused(store: FileStore) -> None:
+    """Если картинка уже готова, просьба про другую модель — это новый запрос."""
+    client = CountingClient(["done"])
+    manager = make_manager(client, store)
+
+    k6 = await manager.create("k6-image-t2i", {"query": "кот"}, censor=True, prompt="кот")
+    await wait_terminal(store, k6.task_id)
+
+    k5 = await manager.create("k5-image-t2i", {"query": "кот"}, censor=True, prompt="кот")
+
+    assert k5.task_id != k6.task_id
+    assert len(client.created) == 2
+    await manager.close()
+
+
+async def test_force_new_ignores_running_task_on_other_route(store: FileStore) -> None:
+    """force_new — осознанное «всё равно сгенерируй ещё раз»."""
+    client = CountingClient(["processing"])
+    manager = make_manager(client, store)
+
+    k6 = await manager.create("k6-image-t2i", {"query": "кот"}, censor=True, prompt="кот")
+    k5 = await manager.create(
+        "k5-image-t2i", {"query": "кот"}, censor=True, prompt="кот", force_new=True
+    )
+
+    assert k5.task_id != k6.task_id
+    assert len(client.created) == 2
+    await manager.close()
+
+
 async def test_force_new_is_the_only_way_past_a_running_task(store: FileStore) -> None:
     """Выполняющуюся задачу переиспользуем всегда; обойти можно только force_new."""
     client = CountingClient(["processing"])

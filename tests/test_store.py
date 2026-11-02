@@ -188,3 +188,56 @@ def test_clear_quota_without_hint(store: FileStore) -> None:
 
     assert store.load_quota()["k5-image-t2i"]["used"] == 1
 
+
+# --- повтор запроса на другой модели ---------------------------------------
+
+
+def test_running_duplicate_is_found_across_routes(store: FileStore) -> None:
+    """Пока задача считается на k6, такой же запрос на k5 должен найти её."""
+    store.save_task(make_record("1", route="k6-image-t2i", status="processing"))
+    store.save_task(
+        make_record(
+            "2",
+            route="k5-image-t2i",
+            prompt="пёс",
+            params={"query": "пёс", "resolution": "1024x1024"},
+            status="processing",
+        )
+    )
+
+    found = store.find_running_duplicate(
+        params={"query": "закат", "resolution": "1024x1024"}, prompt="закат", kind="image"
+    )
+
+    assert found is not None and found.task_id == "1"
+
+
+def test_running_duplicate_ignores_finished_tasks(store: FileStore) -> None:
+    """Готовая задача на другой модели — не повод отдавать её вместо новой."""
+    store.save_task(make_record("1", route="k6-image-t2i", status="saved"))
+
+    assert (
+        store.find_running_duplicate(
+            params={"query": "закат", "resolution": "1024x1024"}, prompt="закат", kind="image"
+        )
+        is None
+    )
+
+
+def test_running_duplicate_respects_prompt_and_kind(store: FileStore) -> None:
+    store.save_task(make_record("1", status="processing"))
+
+    assert (
+        store.find_running_duplicate(
+            params={"query": "ёж", "resolution": "1024x1024"}, prompt="ёж", kind="image"
+        )
+        is None
+    ), "другой промпт — другой запрос"
+    assert (
+        store.find_running_duplicate(
+            params={"query": "закат", "resolution": "1024x1024"}, prompt="закат", kind="video"
+        )
+        is None
+    ), "другой тип задачи не переиспользуется"
+
+
