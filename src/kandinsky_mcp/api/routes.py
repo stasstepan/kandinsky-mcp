@@ -128,12 +128,15 @@ K6_KANDISHOP = _image_route(
     exposed=True,
 )
 
-K6_SUPERRES = RouteSpec(
-    route="k6_superres",
+# 02.11.2026 провайдер переименовал маршрут: k6_superres из спеки исчез,
+# вместо него kandinsky-image-sr-2. Параметры тоже поменялись: `one_step_t`
+# убран, добавлен `creativity` (0..8, сила перерисовки).
+IMAGE_SR_2 = RouteSpec(
+    route="kandinsky-image-sr-2",
     kind=IMAGE,
     title="Kandinsky 6 — увеличение разрешения (super resolution)",
     requires=("image", "upscale"),
-    allowed=frozenset({"image", "upscale", "one_step_t"}),
+    allowed=frozenset({"image", "upscale", "creativity"}),
     enums={},
     image_max_mb=_SUPERRES_MB,
     image_max_side=_SUPERRES_SIDE,
@@ -249,7 +252,7 @@ ALL_ROUTES: tuple[RouteSpec, ...] = (
     K5_IMAGE_T2I,
     K6_I2I,
     K6_KANDISHOP,
-    K6_SUPERRES,
+    IMAGE_SR_2,
     K5_T2V_PRO,
     K5_T2V_LITE,
     K5_I2V_HD,

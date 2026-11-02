@@ -84,5 +84,5 @@ def _tool_for(route: str) -> str | None:
         "k5-image-t2i": "kandinsky_image_generate (model=k5)",
         "k6-i2i": "kandinsky_image_edit (model=k6)",
         "k6-kandishop-quantized": "kandinsky_image_edit (model=kandishop)",
-        "k6_superres": "kandinsky_image_upscale",
+        "kandinsky-image-sr-2": "kandinsky_image_upscale",
     }.get(route)

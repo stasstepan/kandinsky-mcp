@@ -9,8 +9,8 @@ import pytest
 from kandinsky_mcp.api import errors as e
 from kandinsky_mcp.api.routes import (
     IMAGE,
+    IMAGE_SR_2,
     K6_IMAGE_T2I,
-    K6_SUPERRES,
     RouteRegistry,
     normalize_params,
     normalize_resolution,
@@ -55,7 +55,13 @@ def test_exposed_routes_are_images_only_in_v1() -> None:
     assert exposed, "должен быть хотя бы один инструмент"
     assert all(r.kind == IMAGE for r in exposed)
     names = {r.route for r in exposed}
-    assert names == {"k6-image-t2i", "k5-image-t2i", "k6-i2i", "k6-kandishop-quantized", "k6_superres"}
+    assert names == {
+        "k6-image-t2i",
+        "k5-image-t2i",
+        "k6-i2i",
+        "k6-kandishop-quantized",
+        "kandinsky-image-sr-2",
+    }
 
 
 def test_video_routes_are_registered_but_not_exposed() -> None:
@@ -128,9 +134,25 @@ def test_normalize_params_drops_none_values() -> None:
 
 
 def test_superres_has_stricter_image_limits() -> None:
-    assert K6_SUPERRES.image_max_mb == 4.0
-    assert K6_SUPERRES.image_max_side == 1024
+    assert IMAGE_SR_2.image_max_mb == 4.0
+    assert IMAGE_SR_2.image_max_side == 1024
     assert K6_IMAGE_T2I.image_max_side == 2048
+
+
+def test_superres_route_matches_renamed_api() -> None:
+    """02.11.2026: k6_superres переименован в kandinsky-image-sr-2.
+
+    Провайдер убрал `one_step_t` и добавил `creativity`, а ключ маршрута должен
+    совпадать со спекой, иначе апскейл уходит в 404.
+    """
+    assert IMAGE_SR_2.route == "kandinsky-image-sr-2"
+    assert IMAGE_SR_2.requires == ("image", "upscale")
+    assert "creativity" in IMAGE_SR_2.allowed
+    assert "one_step_t" not in IMAGE_SR_2.allowed
+
+    with pytest.raises(e.KandinskyError) as info:
+        normalize_params(IMAGE_SR_2, {"image": "x", "upscale": 2, "one_step_t": 0.5})
+    assert info.value.code == "validation_error"
 
 
 def test_sync_marks_missing_routes_unavailable() -> None:
@@ -140,10 +162,10 @@ def test_sync_marks_missing_routes_unavailable() -> None:
 
     report = registry.sync_with_openapi(spec)
 
-    assert "k6_superres" in report.unavailable
+    assert "kandinsky-image-sr-2" in report.unavailable
     assert "k6-image-t2i" not in report.unavailable
-    assert registry.get("k6_superres").available is False
-    assert all(r.route != "k6_superres" for r in registry.exposed())
+    assert registry.get("kandinsky-image-sr-2").available is False
+    assert all(r.route != "kandinsky-image-sr-2" for r in registry.exposed())
 
 
 def test_sync_reports_unknown_routes_from_api() -> None:

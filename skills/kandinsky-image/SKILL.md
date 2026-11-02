@@ -25,7 +25,7 @@ whenToUse: "Просьбы нарисовать или сгенерироват�
 |---|---|---|
 | `kandinsky_image_generate` | Картинка по тексту | `prompt` |
 | `kandinsky_image_edit` | Изменить картинку по описанию | `prompt`, `images` (1–3) |
-| `kandinsky_image_upscale` | Увеличить в 2 или 4 раза | `image` |
+| `kandinsky_image_upscale` | Увеличить в 2 или 4 раза (`upscale`, плюс `creativity` 0..8 — сила перерисовки) | `image` |
 | `kandinsky_task_status` | Состояние задачи | `task_id` |
 | `kandinsky_task_result` | Забрать готовый файл | `task_id` |
 | `kandinsky_tasks_list` | История генераций | — |

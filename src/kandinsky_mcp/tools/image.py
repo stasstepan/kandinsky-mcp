@@ -388,7 +388,9 @@ def register_image_tools(mcp: MCPServer, ctx: AppContext) -> None:
             "Увеличивает изображение в 2 или 4 раза (super resolution).\n"
             "Upscales an image 2x or 4x (super resolution).\n\n"
             "Вход строже, чем у остальных маршрутов: до 4 МБ и 1024 px по стороне — "
-            "сервер приведёт картинку к лимиту сам."
+            "сервер приведёт картинку к лимиту сам.\n"
+            "Параметр `one_step_t` провайдер убрал 02.11.2026, вместо него "
+            "`creativity` (0..8): 0 ближе к исходнику, 8 добавляет больше деталей."
         ),
     )
     async def kandinsky_image_upscale(
@@ -398,9 +400,16 @@ def register_image_tools(mcp: MCPServer, ctx: AppContext) -> None:
         upscale: Annotated[
             Literal[2, 4], Field(description="Множитель увеличения: 2 или 4. / Upscale factor.")
         ] = 2,
-        one_step_t: Annotated[
-            float | None,
-            Field(ge=0.0, le=1.0, description="Резкость 0..1. / Sharpness 0..1."),
+        creativity: Annotated[
+            int | None,
+            Field(
+                ge=0,
+                le=8,
+                description=(
+                    "Сила перерисовки 0..8: 0 — ближе к исходнику, 8 — больше деталей. "
+                    "По умолчанию значение провайдера. / Redraw strength 0..8."
+                ),
+            ),
         ] = None,
         censor: Annotated[
             bool | None, Field(description="Цензура контента. / Content censor.")
@@ -422,7 +431,7 @@ def register_image_tools(mcp: MCPServer, ctx: AppContext) -> None:
         ] = False,
     ) -> CallToolResult:
         try:
-            spec = ctx.registry.get("k6_superres")
+            spec = ctx.registry.get("kandinsky-image-sr-2")
             encoded, notes = _prepare_input(ctx, image, spec)
         except ValueError as exc:
             return error_result("validation_error", str(exc))
@@ -431,7 +440,7 @@ def register_image_tools(mcp: MCPServer, ctx: AppContext) -> None:
 
         params, warnings = _collect_warnings(
             spec,
-            {"image": encoded, "upscale": int(upscale), "one_step_t": one_step_t},
+            {"image": encoded, "upscale": int(upscale), "creativity": creativity},
         )
         return await submit(
             ctx,
