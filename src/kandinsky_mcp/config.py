@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     session_file_max_bytes: int = 100 * 1024 * 1024
     session_file_timeout: float = 120.0
 
+    # Общий бюджет одного tools/call: создание задачи + ожидание результата.
+    # GigaCowork обрывает вызов на 60 с, поэтому сервер отвечает раньше —
+    # если не успел, возвращает task_id.
+    call_budget_seconds: float = 45.0
+
     # --- Хранилище ---
     data_dir: Path = Path("/data")
     result_ttl_hours: int = 168

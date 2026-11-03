@@ -312,7 +312,26 @@ def test_tools_list_matches_profile(mcp_session: tuple[TestClient, str]) -> None
             assert annotations.get("readOnlyHint") is True, tool["name"]
 
 
-def test_session_file_input_marker(mcp_session: tuple[TestClient, str]) -> None:
+async def test_large_wait_seconds_is_clamped_not_rejected(bundle: Any) -> None:
+    """GigaCowork-модель может попросить wait_seconds=90 — это не ошибка.
+
+    Раньше схема с le=60 отбивала такой вызов JSON-RPC -32602, а платформа
+    показывала «Internal error». Теперь аргумент принимается и ограничивается
+    бюджетом вызова.
+    """
+    install_fake(bundle)
+    tools = {tool.name: tool for tool in await bundle.mcp.list_tools()}
+    wait_schema = tools["kandinsky_image_generate"].input_schema["properties"]["wait_seconds"]
+    assert "maximum" not in wait_schema
+
+    result = await bundle.mcp.call_tool(
+        "kandinsky_image_generate",
+        {"prompt": "кот", "wait_seconds": 1000},
+    )
+    assert result.is_error is False
+
+
+async def test_session_file_input_marker(mcp_session: tuple[TestClient, str]) -> None:
     client, session_id = mcp_session
     response = client.post(
         "/mcp",

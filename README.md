@@ -173,6 +173,7 @@ Cursor / Windsurf — тот же блок в `mcpServers`, для stdio:
 | `RESULT_TTL_HOURS` | нет | `168` | срок хранения файлов |
 | `DEFAULT_CENSOR` | нет | `true` | цензура контента по умолчанию |
 | `DEFAULT_WAIT_SECONDS` | нет | `25` | ожидание результата внутри вызова (максимум 45) |
+| `CALL_BUDGET_SECONDS` | нет | `45` | общий бюджет `tools/call`: создание + ожидание |
 | `RATE_LIMIT_PER_MINUTE` | нет | `120` | защита квоты API от циклов |
 | `ROUTE_SYNC` | нет | `true` | сверять маршруты с `openapi.json` |
 | `ALLOW_LOCAL_PATHS` | нет | `false` | читать входные картинки с диска |

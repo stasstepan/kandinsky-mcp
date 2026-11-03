@@ -148,6 +148,7 @@ async def submit(
 ) -> CallToolResult:
     """Общий путь: валидация → создание задачи → ожидание → ответ."""
     collected = list(warnings or [])
+    started = time.monotonic()
     effective_wait = clamp_wait(wait_seconds)
     if wait_seconds > WAIT_EFFECTIVE_MAX:
         collected.append(
@@ -162,6 +163,18 @@ async def submit(
         record, deduplicated = await ctx.manager.create_ex(
             spec.route, cleaned, censor=effective_censor, prompt=prompt, force_new=force_new
         )
+        # Бюджет считается от начала вызова: медленное создание задачи не должно
+        # выбивать клиента из его таймаута. Не успели — сразу отдаём task_id.
+        elapsed = time.monotonic() - started
+        remaining = ctx.settings.call_budget_seconds - elapsed
+        if remaining < effective_wait:
+            effective_wait = max(0.0, remaining)
+            collected.append(
+                f"Создание задачи заняло {elapsed:.0f} с; ждём результат ещё "
+                f"{effective_wait:.0f} с, чтобы уложиться в таймаут клиента. "
+                "Если не готово — вернётся task_id, его можно забрать через "
+                "kandinsky_task_result."
+            )
         record = await wait_for_local_terminal(ctx, record.task_id, effective_wait)
     except KandinskyError as exc:
         if exc.quota:
@@ -306,10 +319,10 @@ def register_image_tools(mcp: MCPServer, ctx: AppContext) -> None:
             int,
             Field(
                 ge=0,
-                le=WAIT_MAX,
                 description=(
-                    "Сколько секунд ждать результата внутри вызова. 0 — только создать задачу."
-                    " / Seconds to wait inside the call; 0 - just create the task."
+                    "Сколько секунд ждать результата внутри вызова. 0 — только создать задачу. "
+                    "Сервер сам ограничивает ожидание бюджетом вызова и при нехватке времени "
+                    "вернёт task_id. / Seconds to wait inside the call; the server caps it."
                 ),
             ),
         ] = wait_default,
@@ -399,7 +412,10 @@ def register_image_tools(mcp: MCPServer, ctx: AppContext) -> None:
         ] = None,
         wait_seconds: Annotated[
             int,
-            Field(ge=0, le=WAIT_MAX, description="Секунд ожидания внутри вызова. / Seconds to wait."),
+            Field(
+                ge=0,
+                description="Секунд ожидания внутри вызова; сервер ограничит бюджетом вызова.",
+            ),
         ] = wait_default,
         force_new: Annotated[
             bool,
@@ -531,7 +547,10 @@ def register_image_tools(mcp: MCPServer, ctx: AppContext) -> None:
         ] = None,
         wait_seconds: Annotated[
             int,
-            Field(ge=0, le=WAIT_MAX, description="Секунд ожидания внутри вызова. / Seconds to wait."),
+            Field(
+                ge=0,
+                description="Секунд ожидания внутри вызова; сервер ограничит бюджетом вызова.",
+            ),
         ] = wait_default,
         force_new: Annotated[
             bool,
