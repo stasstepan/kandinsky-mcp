@@ -586,6 +586,32 @@ def test_download_url_is_served_without_compression(bundle: Any) -> None:
     assert response.content == PNG
 
 
+async def test_edit_response_does_not_echo_input_base64(bundle: Any, monkeypatch: Any) -> None:
+    """Входная картинка не должна возвращаться в params: это раздувает ответ."""
+    install_fake(bundle)
+
+    async def fake_download(url: str, *, max_bytes: int, timeout: float) -> bytes:
+        return make_valid_png()
+
+    monkeypatch.setattr("kandinsky_mcp.tools.image.download_read_url", fake_download)
+
+    result = await bundle.mcp.call_tool(
+        "kandinsky_image_edit",
+        {
+            "prompt": "добавь бэтмена",
+            "read_url": "https://files.example/source.png",
+            "wait_seconds": 5,
+        },
+    )
+
+    assert result.is_error is False
+    params = result.structured_content["params"]
+    assert "image" not in params and "images" not in params
+    assert params["input_images"] == 1
+    # structuredContent компактный: base64 входа там не осталось.
+    assert len(json.dumps(result.structured_content, ensure_ascii=False)) < 20_000
+
+
 # --- фикстуры для протокольных тестов ---------------------------------------
 
 

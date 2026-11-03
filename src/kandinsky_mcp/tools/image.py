@@ -86,6 +86,23 @@ def inline_images(ctx: AppContext, record: TaskRecord) -> list[tuple[bytes, str]
     return images
 
 
+def _public_params(params: dict[str, Any]) -> dict[str, Any]:
+    """Убирает из ответа входные base64.
+
+    ``record.params`` хранит картинку для повторов и дедупликации, но эхо
+    base64 в structuredContent раздувает результат до >100 КБ (лимит
+    GigaCowork) и отдаёт модели содержимое входного файла. Оставляем только
+    количество входных изображений.
+    """
+    cleaned = dict(params)
+    for key in ("image", "images"):
+        value = cleaned.pop(key, None)
+        if value is None:
+            continue
+        cleaned["input_images"] = len(value) if isinstance(value, list) else 1
+    return cleaned
+
+
 def build_payload(
     ctx: AppContext,
     record: TaskRecord,
@@ -104,7 +121,7 @@ def build_payload(
         "status": record.status,
         "model": record.route,
         "prompt": record.prompt,
-        "params": record.params,
+        "params": _public_params(record.params),
         "elapsed_ms": record.duration_ms,
     }
     if record.files:
