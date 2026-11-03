@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from mcp.server import MCPServer
@@ -21,9 +22,11 @@ from ..api.errors import KandinskyError
 from ..api.routes import K5_IMAGE_T2I, K6_IMAGE_T2I, RouteSpec, normalize_params
 from ..domain.media import prepare_image
 from ..domain.store import TaskRecord
+from ..profile import generation_annotations
 from .context import AppContext, error_result, result_with_images
+from .session_files import download_read_url
 
-WAIT_MAX = 300
+WAIT_MAX = 60
 
 # Фактический предел ожидания внутри одного вызова. Клиенты обычно обрывают
 # запрос к инструменту на 60 секундах, и тогда агент видит «Timed out while
@@ -33,6 +36,13 @@ WAIT_EFFECTIVE_MAX = 45
 # Значение по умолчанию берётся из настроек (DEFAULT_WAIT_SECONDS), чтобы его
 # можно было менять без пересборки: см. register_image_tools.
 WAIT_FALLBACK = 25
+
+# Техническое поле, в которое GigaCowork подставляет временную ссылку на файл
+# сессии. Маркер — расширение платформы, а не стандартный MCP: по нему агент
+# видит выбор файла вместо строки с URL.
+SESSION_FILE_INPUT = {
+    "x-session-file-input": {"model_field": "source", "transport": "read_url"}
+}
 
 
 def clamp_wait(seconds: float) -> float:
@@ -82,7 +92,13 @@ def build_payload(
     *,
     warnings: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Единый формат ответа: агент видит одно и то же во всех инструментах."""
+    """Единый формат ответа: агент видит одно и то же во всех инструментах.
+
+    Помимо привычных полей, при готовом файле в корень кладутся
+    ``filename``/``content_type``/``download_url``/``size`` — их читает
+    GigaCowork в режиме ``x-session-file-output: url``, чтобы перенести файл
+    в сессию. В текстовую сводку эти поля (и URL) не попадают.
+    """
     payload: dict[str, Any] = {
         "task_id": record.task_id,
         "status": record.status,
@@ -93,8 +109,15 @@ def build_payload(
     }
     if record.files:
         payload["media"] = ctx.media_payload(record)
+        primary = record.files[0]
+        payload["filename"] = Path(primary.rel_path).name
+        payload["content_type"] = primary.mime
+        payload["download_url"] = ctx.file_url(primary.rel_path)
+        payload["size"] = primary.bytes
     if record.status == "saved":
-        payload["next"] = "Файл сохранён. Ссылка media[].url отдаёт его по подписи."
+        payload["next"] = (
+            "Файл готов: filename, content_type и download_url — в structuredContent."
+        )
     elif record.status == "failed":
         payload["error"] = record.error
         payload["next"] = (
@@ -171,7 +194,11 @@ async def submit(
             record.error or "Генерация не удалась",
             payload["next"],
         )
-    return result_with_images(payload, inline_images(ctx, record))
+    return result_with_images(
+        payload,
+        inline_images(ctx, record),
+        max_chars=ctx.settings.max_inline_result_chars,
+    )
 
 
 def _collect_warnings(
@@ -192,12 +219,32 @@ def _collect_warnings(
     return kept, warnings
 
 
+def _prepare_raw(
+    ctx: AppContext,
+    raw: bytes,
+    spec: RouteSpec,
+    *,
+    label: str = "Входная картинка",
+) -> tuple[str, list[str]]:
+    """Приводит картинку к лимитам маршрута, кодирует в base64 и объясняет правки."""
+    image = prepare_image(raw, max_mb=spec.image_max_mb, max_side=spec.image_max_side)
+    notes = [f"{label}: {image.describe()}"] if (image.resized or image.recompressed) else []
+    return image.base64, notes
+
+
 def _prepare_input(ctx: AppContext, source: str, spec: RouteSpec) -> tuple[str, list[str]]:
     """Готовит входную картинку: читает, приводит к лимитам, кодирует в base64."""
-    raw = ctx.load_image(source)
-    image = prepare_image(raw, max_mb=spec.image_max_mb, max_side=spec.image_max_side)
-    notes = [f"Входная картинка: {image.describe()}"] if (image.resized or image.recompressed) else []
-    return image.base64, notes
+    return _prepare_raw(ctx, ctx.load_image(source), spec)
+
+
+async def _prepare_session_file(ctx: AppContext, read_url: str, spec: RouteSpec) -> tuple[str, list[str]]:
+    """Скачивает входной файл сессии по read_url и готовит его как картинку."""
+    raw = await download_read_url(
+        read_url,
+        max_bytes=ctx.settings.session_file_max_bytes,
+        timeout=ctx.settings.session_file_timeout,
+    )
+    return _prepare_raw(ctx, raw, spec, label="Входной файл сессии")
 
 
 def register_image_tools(mcp: MCPServer, ctx: AppContext) -> None:
@@ -206,13 +253,20 @@ def register_image_tools(mcp: MCPServer, ctx: AppContext) -> None:
     @mcp.tool(
         name="kandinsky_image_generate",
         title="Генерация изображения по тексту",
+        annotations=generation_annotations(),
         description=(
             "Создаёт изображение по текстовому описанию через Kandinsky API.\n"
             "Generates an image from a text prompt via Kandinsky API.\n\n"
-            "Файл сохраняется на сервере, в ответ приходят подписанная ссылка и "
-            "превью картинки. Ожидание внутри вызова ограничено wait_seconds: если "
-            "не успело, вернётся task_id — результат всё равно будет скачан фоновым "
-            "поллером, его можно забрать через kandinsky_task_result."
+            "Изменяет внешнюю систему: создаёт платную задачу генерации и расходует "
+            "квоту (даже если результат не понравится). Возвращает task_id, статус, "
+            "метаданные файла и ссылку на скачивание в structuredContent; файл "
+            "добавляется в сессию GigaCowork.\n\n"
+            "Когда не использовать: для правки готовой картинки есть "
+            "kandinsky_image_edit, для увеличения — kandinsky_image_upscale. "
+            "Не повторяйте вызов, если вернулся task_id — результат забирают через "
+            "kandinsky_task_result. Ожидание внутри вызова ограничено wait_seconds: "
+            "если не успело, вернётся task_id, файл всё равно будет скачан фоновым "
+            "поллером."
         ),
     )
     async def kandinsky_image_generate(
@@ -296,11 +350,17 @@ def register_image_tools(mcp: MCPServer, ctx: AppContext) -> None:
     @mcp.tool(
         name="kandinsky_image_edit",
         title="Редактирование изображения по тексту",
+        annotations=generation_annotations(),
         description=(
             "Меняет существующее изображение по описанию (image-to-image).\n"
             "Edits an existing image from a text prompt (image-to-image).\n\n"
-            "Принимает 1–3 изображения в base64, data-URI или (в stdio-режиме) путём "
-            "к файлу. Слишком большие картинки уменьшаются автоматически."
+            "Изменяет внешнюю систему: создаёт платную задачу и расходует квоту. "
+            "Вход — 1–3 изображения: файл сессии GigaCowork (поле source) или images "
+            "(base64, data-URI, в stdio-режиме — путь). Возвращает task_id, метаданные "
+            "файла и download_url в structuredContent; готовый файл добавляется в сессию.\n\n"
+            "Когда не использовать: для картинки с нуля — kandinsky_image_generate, "
+            "для увеличения — kandinsky_image_upscale. За один вызов принимается один "
+            "файл сессии; несколько входов передавайте через images."
         ),
     )
     async def kandinsky_image_edit(
@@ -308,12 +368,24 @@ def register_image_tools(mcp: MCPServer, ctx: AppContext) -> None:
             str, Field(description="Что изменить, до 2048 символов. / Edit instruction.")
         ],
         images: Annotated[
-            list[str],
+            list[str] | None,
             Field(
-                min_length=1,
-                description="1–3 изображения: base64, data-URI или путь. / Source images (1-3).",
+                description=(
+                    "1–3 изображения: base64, data-URI или путь. В GigaCowork вместо "
+                    "этого поля используется выбор файла (source). / Source images (1-3)."
+                )
             ),
-        ],
+        ] = None,
+        read_url: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Служебное поле GigaCowork: временная HTTPS-ссылка на файл сессии. "
+                    "Заполняется платформой, вручную не задаётся. / Session file URL."
+                ),
+                json_schema_extra=SESSION_FILE_INPUT,
+            ),
+        ] = None,
         model: Annotated[
             Literal["k6", "kandishop"],
             Field(description="k6 — обычная модель, kandishop — квантованная. / Model variant."),
@@ -347,17 +419,38 @@ def register_image_tools(mcp: MCPServer, ctx: AppContext) -> None:
         except KandinskyError as exc:
             return error_result(exc.code, exc.message, exc.hint)
 
-        if len(images) > spec.max_images:
+        sources = list(images or [])
+        total = len(sources) + (1 if read_url else 0)
+        if total == 0:
+            return error_result(
+                "validation_error",
+                "Не передано ни одного изображения",
+                (
+                    "В GigaCowork выберите файл в поле source; в других клиентах "
+                    "передайте images (base64, data-URI или путь)."
+                ),
+            )
+        if total > spec.max_images:
             return error_result(
                 "validation_error",
                 f"Маршрут {route} принимает не больше {spec.max_images} изображений, "
-                f"передано {len(images)}.",
+                f"передано {total}.",
                 "Уберите лишние изображения и повторите.",
             )
 
         prepared: list[str] = []
         notes: list[str] = []
-        for index, source in enumerate(images, start=1):
+        if read_url:
+            try:
+                encoded, item_notes = await _prepare_session_file(ctx, read_url, spec)
+            except ValueError as exc:
+                return error_result("validation_error", f"Входной файл сессии: {exc}")
+            except KandinskyError as exc:
+                return error_result(exc.code, exc.message, exc.hint)
+            prepared.append(encoded)
+            notes.extend(item_notes)
+
+        for index, source in enumerate(sources, start=1):
             try:
                 encoded, item_notes = _prepare_input(ctx, source, spec)
             except ValueError as exc:
@@ -384,19 +477,41 @@ def register_image_tools(mcp: MCPServer, ctx: AppContext) -> None:
     @mcp.tool(
         name="kandinsky_image_upscale",
         title="Увеличение разрешения изображения",
+        annotations=generation_annotations(),
         description=(
             "Увеличивает изображение в 2 или 4 раза (super resolution).\n"
             "Upscales an image 2x or 4x (super resolution).\n\n"
-            "Вход строже, чем у остальных маршрутов: до 4 МБ и 1024 px по стороне — "
-            "сервер приведёт картинку к лимиту сам.\n"
+            "Изменяет внешнюю систему: создаёт платную задачу и расходует квоту. "
+            "Вход — файл сессии GigaCowork (поле source) или image (base64, data-URI, "
+            "в stdio — путь). Строгие лимиты: до 4 МБ и 1024 px по стороне, сервер "
+            "приводит картинку к лимиту сам. Возвращает task_id и download_url; готовый "
+            "файл добавляется в сессию.\n\n"
+            "Когда не использовать: для генерации с нуля — kandinsky_image_generate, "
+            "для изменения содержания — kandinsky_image_edit. "
             "Параметр `one_step_t` провайдер убрал 02.11.2026, вместо него "
             "`creativity` (0..8): 0 ближе к исходнику, 8 добавляет больше деталей."
         ),
     )
     async def kandinsky_image_upscale(
         image: Annotated[
-            str, Field(description="Изображение: base64, data-URI или путь. / Source image.")
-        ],
+            str | None,
+            Field(
+                description=(
+                    "Изображение: base64, data-URI или путь. В GigaCowork вместо этого "
+                    "поля используется выбор файла (source). / Source image."
+                )
+            ),
+        ] = None,
+        read_url: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Служебное поле GigaCowork: временная HTTPS-ссылка на файл сессии. "
+                    "Заполняется платформой, вручную не задаётся. / Session file URL."
+                ),
+                json_schema_extra=SESSION_FILE_INPUT,
+            ),
+        ] = None,
         upscale: Annotated[
             Literal[2, 4], Field(description="Множитель увеличения: 2 или 4. / Upscale factor.")
         ] = 2,
@@ -432,7 +547,24 @@ def register_image_tools(mcp: MCPServer, ctx: AppContext) -> None:
     ) -> CallToolResult:
         try:
             spec = ctx.registry.get("kandinsky-image-sr-2")
-            encoded, notes = _prepare_input(ctx, image, spec)
+        except KandinskyError as exc:
+            return error_result(exc.code, exc.message, exc.hint)
+
+        if not image and not read_url:
+            return error_result(
+                "validation_error",
+                "Не передано изображение",
+                (
+                    "В GigaCowork выберите файл в поле source; в других клиентах "
+                    "передайте image (base64, data-URI или путь)."
+                ),
+            )
+
+        try:
+            if read_url:
+                encoded, notes = await _prepare_session_file(ctx, read_url, spec)
+            else:
+                encoded, notes = _prepare_input(ctx, image or "", spec)
         except ValueError as exc:
             return error_result("validation_error", str(exc))
         except KandinskyError as exc:

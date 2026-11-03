@@ -1,4 +1,4 @@
-﻿# Как развернуть
+# Как развернуть
 
 Пошагово, от пустой папки до работающего инструмента в агенте.
 Всё выполняется на сервере, локально собирать ничего не нужно.
@@ -103,6 +103,13 @@ curl -s localhost:8000/readyz
 docker compose exec kandinsky-mcp kandinsky-mcp-smoke
 ```
 
+Проверка совместимости с GigaCowork (квоту не тратит, только бесплатные вызовы):
+
+```bash
+MCP_API_KEY="<ключ из .env>" python scripts/compat_check.py
+# ожидаемо: 22 PASS, exit 0
+```
+
 `kandinsky-mcp-smoke` — это и есть проверка «всё действительно работает»:
 он создаёт задачу, поллит её, скачивает результат и печатает путь к файлу.
 Тратит одну генерацию из квоты.
@@ -132,7 +139,10 @@ task_id=524, ждём результат…
 
 ```caddyfile
 kandinsky.example.com {
-    encode zstd gzip
+    @files path /files/*
+    @notfiles not path /files/*
+    encode @notfiles zstd gzip
+    log_skip @files
     request_body { max_size 40MB }
     reverse_proxy 127.0.0.1:8000 {
         flush_interval -1
@@ -153,7 +163,9 @@ sudo systemctl reload caddy
 
 Две строки в этом блоке не декоративные: `flush_interval -1` отключает
 буферизацию SSE (без неё MCP-клиент висит без событий), а `max_size 40MB`
-нужен, потому что base64 раздувает картинку на треть.
+нужен, потому что base64 раздувает картинку на треть. `/files/*` исключён из
+`encode` и логов: GigaCowork требует от `download_url` ответ без сжатия, а
+подписанные query-параметры не должны попадать в access-лог.
 
 ### Вариант B — Caddy ещё не установлен
 
@@ -166,9 +178,18 @@ docker compose --profile edge up -d
 Он сам получит сертификат для домена из `deploy/Caddyfile`
 (проверьте, что A-запись домена указывает на сервер, порты 80/443 открыты).
 
-## 6. Подключить к агенту
+## 6. Подключить к GigaCowork
 
-В `~/.dsh/profiles/desktop/cordis.patch.yml`:
+Коннектор типа `Streamable HTTP`, адрес `https://kandinsky.example.com/mcp`,
+авторизация «HTTP-заголовки», заголовок `X-API-Key`. Подробности, Definition и
+карточка витрины — в [docs/GIGACOWORK.md](../docs/GIGACOWORK.md) и
+`gigacowork/`. Файлы сессии работают автоматически: вход — `read_url` в
+edit/upscale, выход — `structuredContent.download_url`.
+
+Если GigaCowork присылает заголовок `Origin`, добавьте его в
+`MCP_ALLOWED_ORIGINS` (через запятую), иначе сервер ответит 403.
+
+DSH (`~/.dsh/profiles/desktop/cordis.patch.yml`):
 
 ```yaml
 - insert:
@@ -180,11 +201,11 @@ docker compose --profile edge up -d
         url: https://kandinsky.example.com/mcp
         headers:
           X-API-Key: <MCP_API_KEY из .env>
-        toolCallTimeoutMs: 150000
+        toolCallTimeoutMs: 90000
         failOnStartupError: false
 ```
 
-`toolCallTimeoutMs` важен: инструмент ждёт готовности картинки до 60 секунд
+`toolCallTimeoutMs` важен: сервер ждёт готовности картинки до 45 секунд
 (`wait_seconds`), плюс запас на сеть. Если поставить меньше — вызов вернёт
 `task_id`, файл всё равно скачается, но забрать его придётся через
 `kandinsky_task_result`.

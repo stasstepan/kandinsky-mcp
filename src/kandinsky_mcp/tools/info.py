@@ -9,6 +9,7 @@ from mcp.types import CallToolResult
 from pydantic import Field
 
 from ..api.routes import AVATAR, IMAGE, VIDEO, VIDEO_AUDIO
+from ..profile import read_only_annotations
 from .context import AppContext, text_result
 
 
@@ -16,12 +17,16 @@ def register_info_tools(mcp: MCPServer, ctx: AppContext) -> None:
     @mcp.tool(
         name="kandinsky_routes",
         title="Доступные модели и параметры",
+        annotations=read_only_annotations(),
         description=(
             "Справка по моделям: какие маршруты доступны, какие параметры они "
             "принимают, допустимые значения и лимиты.\n"
             "Reference of available routes: parameters, allowed values and limits.\n\n"
+            "Только читает встроенный реестр: квоту не тратит, в API не ходит. "
             "Вызывайте первым, если не уверены, какая модель и какие значения подходят. "
-            "Список сверяется с OpenAPI-спекой хоста при старте."
+            "Список сверяется с OpenAPI-спекой хоста при старте.\n\n"
+            "Когда не использовать: для самой генерации — соответствующий инструмент; "
+            "справка не заменяет kandinsky_task_status и не создаёт задач."
         ),
     )
     async def kandinsky_routes(

@@ -12,7 +12,13 @@
 # Значение по умолчанию — локальный порт.
 
 kandinsky.example.com {
-	encode zstd gzip
+	# /files/* не сжимаем: GigaCowork скачивает download_url и требует
+	# Content-Encoding: identity. Заодно не пишем в access-лог query-строку
+	# с подписью ссылки.
+	@files path /files/*
+	@notfiles not path /files/*
+	encode @notfiles zstd gzip
+	log_skip @files
 
 	# Тело запроса: входные картинки идут в base64, это +33 % к размеру файла.
 	# 25 МБ картинка превращается в ~34 МБ JSON, поэтому лимит выше, чем у API.

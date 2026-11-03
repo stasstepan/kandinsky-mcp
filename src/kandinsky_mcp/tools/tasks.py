@@ -11,6 +11,7 @@ from pydantic import Field
 
 from ..api.errors import NOT_READY, KandinskyError
 from ..domain.store import TaskRecord
+from ..profile import read_only_annotations, result_file_annotations
 from .context import AppContext, error_result, result_with_images, text_result
 from .image import build_payload, inline_images
 
@@ -57,11 +58,14 @@ def register_task_tools(mcp: MCPServer, ctx: AppContext) -> None:
     @mcp.tool(
         name="kandinsky_task_status",
         title="Статус задачи генерации",
+        annotations=read_only_annotations(),
         description=(
             "Возвращает состояние задачи: queued, processing, saved или failed.\n"
             "Returns task state: queued, processing, saved or failed.\n\n"
-            "Состояние локальное: файл уже на сервере, если статус saved. "
-            "refresh=true дополнительно спрашивает API."
+            "Только читает: новых задач не создаёт и квоту не тратит. Состояние "
+            "локальное: файл уже на сервере, если статус saved. refresh=true "
+            "дополнительно спрашивает API.\n\n"
+            "Когда не использовать: чтобы получить сам файл — kandinsky_task_result."
         ),
     )
     async def kandinsky_task_status(
@@ -83,16 +87,21 @@ def register_task_tools(mcp: MCPServer, ctx: AppContext) -> None:
 
         payload = build_payload(ctx, record)
         payload["active_pollers"] = len(ctx.manager.list_active())
-        return text_result(payload)
+        return result_with_images(payload, (), max_chars=ctx.settings.max_inline_result_chars)
 
     @mcp.tool(
         name="kandinsky_task_result",
         title="Результат задачи",
+        annotations=result_file_annotations(),
         description=(
-            "Отдаёт готовый файл: ссылку, размер и sha256, а для картинок — превью.\n"
-            "Returns the finished file: signed URL, size, sha256 and an inline preview.\n\n"
-            "В API не ходит: файл уже скачан фоновым поллером, поэтому повторные "
-            "вызовы безопасны."
+            "Отдаёт готовый файл: метаданные, ссылку на скачивание и превью.\n"
+            "Returns the finished file: metadata, download URL and an inline preview.\n\n"
+            "Только читает: в API не ходит, файл уже скачан фоновым поллером, поэтому "
+            "повторные вызовы безопасны и квоту не тратят. В structuredContent — "
+            "filename, content_type, download_url, size; файл добавляется в сессию "
+            "GigaCowork.\n\n"
+            "Когда не использовать: пока задача не готова (вернётся isError=not_ready) — "
+            "дождитесь kandinsky_task_status. Не вызывайте для повторной генерации."
         ),
     )
     async def kandinsky_task_result(
@@ -131,14 +140,23 @@ def register_task_tools(mcp: MCPServer, ctx: AppContext) -> None:
         payload = build_payload(ctx, record)
         if return_base64:
             payload = attach_base64(ctx, record, payload)
-        return result_with_images(payload, inline_images(ctx, record) if inline else [])
+        return result_with_images(
+            payload,
+            inline_images(ctx, record) if inline else [],
+            max_chars=ctx.settings.max_inline_result_chars,
+        )
 
     @mcp.tool(
         name="kandinsky_tasks_list",
         title="Список задач",
+        annotations=read_only_annotations(),
         description=(
             "Последние задачи с фильтрами по статусу и модели.\n"
-            "Lists recent tasks, optionally filtered by status or model."
+            "Lists recent tasks, optionally filtered by status or model.\n\n"
+            "Только читает локальный список задач; квоту не тратит. Промпты "
+            "обрезаются до 120 символов.\n\n"
+            "Когда не использовать: для файла конкретной задачи — "
+            "kandinsky_task_result, для статуса одной задачи — kandinsky_task_status."
         ),
     )
     async def kandinsky_tasks_list(

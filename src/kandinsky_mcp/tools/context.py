@@ -43,6 +43,7 @@ class AppContext:
     def media_payload(self, record: TaskRecord) -> list[dict[str, Any]]:
         return [
             {
+                "filename": Path(f.rel_path).name,
                 "mime": f.mime,
                 "bytes": f.bytes,
                 "sha256": f.sha256,
@@ -128,6 +129,48 @@ def as_json(data: dict[str, Any]) -> str:
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
+# Сколько символов в результате инструмента готовы принять «обычные» клиенты.
+# GigaCowork обрезает результат длиннее 100 000 символов, поэтому inline-превью
+# добавляем только пока ответ укладывается в бюджет.
+INLINE_RESULT_BUDGET = 90_000
+
+
+def summary_text(data: dict[str, Any]) -> str:
+    """Короткая сводка без URL, путей и base64.
+
+    Текст читает модель, поэтому временные ссылки на файлы в него не попадают:
+    они живут в structuredContent (``download_url``) и в MCP image-блоке.
+    """
+    status = data.get("status")
+    task_id = data.get("task_id")
+    head = f"task_id={task_id}, status={status}, model={data.get('model')}"
+
+    lines: list[str] = []
+    if status == "saved":
+        for item in data.get("media") or []:
+            lines.append(
+                f"{head}; файл: {item.get('filename') or 'результат'}, "
+                f"{item.get('mime')}, {item.get('bytes')} Б, "
+                f"sha256={str(item.get('sha256') or '')[:16]}…"
+            )
+        if not data.get("media"):
+            lines.append(f"{head}; файл готов")
+    elif status == "failed":
+        lines.append(f"{head}; ошибка: {data.get('error')}")
+    else:
+        lines.append(
+            f"{head}; генерация ещё идёт — заберите результат через "
+            f"kandinsky_task_result(task_id={task_id})"
+        )
+
+    next_step = data.get("next")
+    if next_step:
+        lines.append(str(next_step))
+    for warning in data.get("warnings") or []:
+        lines.append(f"warning: {warning}")
+    return "\n".join(lines)
+
+
 def text_result(data: dict[str, Any]) -> CallToolResult:
     """Ответ без медиа: текст + структурированные данные."""
     return CallToolResult(
@@ -141,10 +184,23 @@ def result_with_images(
     images: Sequence[tuple[bytes, str]] = (),
     *,
     summary: str | None = None,
+    max_chars: int | None = None,
 ) -> CallToolResult:
-    """Ответ с inline-превью: текст, структурированные данные, картинки."""
-    blocks: list[Any] = [TextContent(type="text", text=summary or as_json(data))]
+    """Ответ с inline-превью: краткий текст, структурированные данные, картинки.
+
+    Превью добавляется, только пока результат укладывается в ``max_chars``:
+    GigaCowork обрезает ответы длиннее 100 000 символов, и обрезанный base64
+    ломает картинку. Полный файл всегда доступен через structuredContent.
+    """
+    text = summary if summary is not None else summary_text(data)
+    blocks: list[Any] = [TextContent(type="text", text=text)]
+
+    budget = (INLINE_RESULT_BUDGET if max_chars is None else max_chars) - len(text) - 500
     for raw, mime in images:
+        estimated = ((len(raw) + 2) // 3) * 4
+        if estimated > budget:
+            continue
+        budget -= estimated
         blocks.append(
             ImageContent(
                 type="image",

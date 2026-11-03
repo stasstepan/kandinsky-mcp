@@ -17,6 +17,7 @@ from .api.routes import RouteRegistry
 from .config import Settings
 from .domain.store import FileStore
 from .domain.tasks import TaskManager
+from .profile import install as install_gigacowork_profile
 from .tools import register_all
 from .tools.context import AppContext
 
@@ -32,13 +33,16 @@ INSTRUCTIONS = """\
    допустимые разрешения и лимиты именно этого хоста API.
 2. Генерация: kandinsky_image_generate, kandinsky_image_edit,
    kandinsky_image_upscale. Каждый вызов создаёт задачу и ждёт результат
-   внутри вызова (wait_seconds), возвращая ссылку на файл и превью картинки.
+   внутри вызова (wait_seconds), возвращая task_id, метаданные файла и
+   structuredContent с download_url.
 3. Если вызов вернул status=queued/processing — генерация ещё идёт.
    Файл скачивается фоновым поллером сам: kandinsky_task_status покажет
    состояние, kandinsky_task_result отдаст готовый файл без повторного
-   обращения к API.
+   обращения к API. Файл попадает в сессию GigaCowork через download_url.
 4. Ошибка с кодом censored значит, что контент заблокирован. Повтор того же
    промпта бесполезен — перепишите запрос.
+5. Временные ссылки на файлы не показывайте пользователю как результат:
+   в тексте ответа их нет, они лежат в structuredContent.
 """
 
 
@@ -119,6 +123,7 @@ def build(settings: Settings | None = None, sync_routes: bool | None = None) -> 
         lifespan=lifespan,
     )
     register_all(mcp, ctx)
+    install_gigacowork_profile(mcp)
 
     from .http_app import build_app  # поздний импорт: нужен уже настроенный mcp
 

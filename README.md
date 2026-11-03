@@ -14,7 +14,11 @@ API асинхронный: заявка создаётся, затем опра
 - **Результат не теряется.** API отдаёт файл однократно и хранит его 10 минут; сервер
   скачивает результат фоновым поллером сразу, как только задача готова, и хранит у себя.
   Повторный вызов инструмента не «сжигает» уже полученную картинку.
-- Картинка возвращается **превью прямо в ответе** плюс подписанной ссылкой на файл.
+- Картинка возвращается **превью в ответе** (пока результат укладывается в
+  100 000 символов), а метаданные и `download_url` — в `structuredContent`;
+  GigaCowork по этой ссылке переносит файл в сессию.
+- **Файлы сессии GigaCowork:** вход — `read_url` в edit/upscale, выход —
+  `x-session-file-output: url`.
 - Два транспорта в одном образе: Streamable HTTP (`/mcp`) и stdio.
 - Ключ доступа `X-API-Key`, ограничение частоты запросов, non-root контейнер.
 
@@ -23,14 +27,16 @@ API асинхронный: заявка создаётся, затем опра
 | Инструмент | Что делает |
 |---|---|
 | `kandinsky_image_generate` | Изображение по тексту. `model=k6\|k5`, `resolution`, `beautificator`, `censor` |
-| `kandinsky_image_edit` | Изменение картинки по описанию (1–3 входных изображения), `model=k6\|kandishop` |
-| `kandinsky_image_upscale` | Увеличение ×2 или ×4 (super resolution), `one_step_t` |
+| `kandinsky_image_edit` | Изменение картинки по описанию (1–3 входных изображения или файл сессии `read_url`), `model=k6\|kandishop` |
+| `kandinsky_image_upscale` | Увеличение ×2 или ×4 (super resolution), `creativity` |
 | `kandinsky_task_status` | Состояние задачи (`queued`/`processing`/`saved`/`failed`), `refresh=true` — спросить API |
-| `kandinsky_task_result` | Готовый файл: ссылка, размер, sha256, превью. В API не ходит |
+| `kandinsky_task_result` | Готовый файл: метаданные, `download_url`, превью. В API не ходит |
 | `kandinsky_tasks_list` | Последние задачи с фильтрами |
 | `kandinsky_routes` | Справка: какие модели доступны, какие параметры и значения допустимы |
 
-Ответ инструментов всегда одного вида:
+Текст ответа — короткая сводка без ссылок (её читает модель). Машинные данные,
+включая `filename`, `content_type`, `download_url`, лежат в `structuredContent`;
+готовый файл GigaCowork переносит в сессию по аннотации `x-session-file-output`:
 
 ```json
 {
@@ -40,14 +46,19 @@ API асинхронный: заявка создаётся, затем опра
   "prompt": "закат над морем",
   "params": { "query": "закат над морем", "resolution": "1024x1024" },
   "elapsed_ms": 18400,
+  "filename": "1842.jpg",
+  "content_type": "image/jpeg",
+  "download_url": "https://kandinsky.example/files/results/2026-02-14/1842.jpg?exp=…&sig=…",
+  "size": 148231,
   "media": [{
-    "mime": "image/png",
-    "bytes": 1482311,
+    "filename": "1842.jpg",
+    "mime": "image/jpeg",
+    "bytes": 148231,
     "sha256": "9f2c…",
-    "url": "https://kandinsky.example/files/results/2026-02-14/1842.png?exp=…&sig=…",
-    "path": "results/2026-02-14/1842.png"
+    "url": "https://kandinsky.example/files/results/2026-02-14/1842.jpg?exp=…&sig=…",
+    "path": "results/2026-02-14/1842.jpg"
   }],
-  "next": "Файл сохранён. Ссылка media[].url отдаёт его по подписи."
+  "next": "Файл готов: filename, content_type и download_url — в structuredContent."
 }
 ```
 
@@ -76,11 +87,33 @@ curl -s localhost:8000/healthz
 Порт наружу в compose не публикуется — предполагается, что снаружи стоит Caddy.
 Для локальной проверки раскомментируйте `ports` в `docker-compose.yml`.
 
-### Подключение к агенту
+### Подключение к GigaCowork
 
 Основной сценарий — GigaCowork ([cowork.ru](https://cowork.ru)): коннектор типа
 `Streamable HTTP`, адрес `https://<ваш-домен>/mcp`, авторизация «HTTP-заголовки»,
-заголовок `X-API-Key` со значением ключа.
+заголовок `X-API-Key` со значением ключа. Для общей витрины готовы
+[Definition](gigacowork/definition.yaml) и [карточка](gigacowork/integration.yaml);
+полный чек-лист и ограничения — в [docs/GIGACOWORK.md](docs/GIGACOWORK.md).
+
+Профиль GigaCowork сервер соблюдает сам:
+
+- `initialize` согласует MCP `2025-11-25`, `notifications/initialized` → 202;
+- имена инструментов `[A-Za-z0-9_-]{1,64}`, полный каталог в первом `tools/list`;
+- неизвестный инструмент и невалидные аргументы → JSON-RPC `-32602`,
+  прикладная ошибка → `isError: true`;
+- `GET /mcp` без сессии → `405`, чужой `Origin` → `403`
+  (доверенные задаются `MCP_ALLOWED_ORIGINS`);
+- файлы сессии: вход через `read_url` (`x-session-file-input`), выход через
+  `structuredContent.download_url` (`x-session-file-output: url`);
+- результат инструмента укладывается в 100 000 символов: inline-превью
+  добавляется только пока ответ в бюджете `MAX_INLINE_RESULT_CHARS`;
+- `download_url` отдаётся без сжатия (`Content-Encoding: identity`).
+
+Проверка совместимости без траты квоты:
+
+```bash
+MCP_URL=https://<ваш-домен>/mcp MCP_API_KEY=... python scripts/compat_check.py
+```
 
 DeepSeek Harness — `~/.dsh/profiles/desktop/cordis.patch.yml`:
 
@@ -94,7 +127,7 @@ DeepSeek Harness — `~/.dsh/profiles/desktop/cordis.patch.yml`:
         url: https://kandinsky.example.com/mcp
         headers:
           X-API-Key: <MCP_API_KEY>
-        toolCallTimeoutMs: 150000   # генерация с ожиданием занимает до минуты
+        toolCallTimeoutMs: 90000   # сервер ждёт результат не дольше 45 с
         failOnStartupError: false
 ```
 
@@ -130,16 +163,24 @@ Cursor / Windsurf — тот же блок в `mcpServers`, для stdio:
 | `DATA_DIR` | нет | `/data` | где лежат задачи и результаты |
 | `RESULT_TTL_HOURS` | нет | `168` | срок хранения файлов |
 | `DEFAULT_CENSOR` | нет | `true` | цензура контента по умолчанию |
-| `RATE_LIMIT_PER_MINUTE` | нет | `30` | защита дневной квоты API |
+| `DEFAULT_WAIT_SECONDS` | нет | `25` | ожидание результата внутри вызова (максимум 45) |
+| `RATE_LIMIT_PER_MINUTE` | нет | `120` | защита квоты API от циклов |
 | `ROUTE_SYNC` | нет | `true` | сверять маршруты с `openapi.json` |
 | `ALLOW_LOCAL_PATHS` | нет | `false` | читать входные картинки с диска |
+| `MAX_INLINE_RESULT_CHARS` | нет | `90000` | бюджет inline-превью в результате |
+| `MCP_ALLOWED_ORIGINS` | нет | — | доверенные `Origin` для `/mcp` (через запятую) |
+| `SESSION_FILE_MAX_BYTES` | нет | `104857600` | лимит входного файла сессии |
+| `SESSION_FILE_TIMEOUT` | нет | `120` | таймаут скачивания файла сессии, с |
 
 ## Caddy
 
-`deploy/Caddyfile` — готовый конфиг. Две строки в нём принципиальны:
+`deploy/Caddyfile` — готовый конфиг. Принципиальные строки:
 
 - `flush_interval -1` — без этого Caddy буферизует SSE и MCP-клиент не получает события;
-- `request_body { max_size 40MB }` — base64 раздувает картинку на треть.
+- `request_body { max_size 40MB }` — base64 раздувает картинку на треть;
+- `/files/*` исключён из `encode` и `log_skip`: `download_url` должен отдаваться
+  без сжатия (`Content-Encoding: identity`), а подписанные query-параметры
+  не должны попадать в access-логи.
 
 Если Caddy в контейнере, задайте `UPSTREAM=kandinsky-mcp:8000` (в compose уже задано).
 
@@ -148,9 +189,11 @@ Cursor / Windsurf — тот же блок в `mcpServers`, для stdio:
 | Путь | Доступ | Назначение |
 |---|---|---|
 | `POST /mcp` | `X-API-Key` | MCP Streamable HTTP |
-| `GET /files/<path>?exp=&sig=` | подпись в URL | готовые изображения |
+| `GET /mcp` | — | `405` без сессии (серверных уведомлений нет) |
+| `GET /files/<path>?exp=&sig=` | подпись в URL | готовые изображения без сжатия |
 | `GET /healthz` | публичный | живость процесса |
 | `GET /readyz` | публичный | доступность Kandinsky API (кеш 30 с) |
+| `GET /stats` | `X-API-Key` | расход квоты по маршрутам за месяц |
 
 ## Разработка
 

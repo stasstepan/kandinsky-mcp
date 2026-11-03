@@ -1,4 +1,4 @@
-﻿"""HTTP-приложение: MCP по /mcp, файлы по /files, health-проверки.
+"""HTTP-приложение: MCP по /mcp, файлы по /files, health-проверки.
 
 Собирается из приложения, которое отдаёт сам MCP SDK, плюс собственные роуты
 и два middleware: ключ доступа и ограничение частоты.
@@ -19,6 +19,7 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from . import __version__
 from .api.errors import KandinskyError
 from .auth import ApiKeyMiddleware, RateLimiter, RateLimitMiddleware, verify_file
+from .middleware import ProtocolCompatMiddleware
 from .tools.context import AppContext
 
 # Кеш проверки готовности: не дёргаем внешний API на каждый запрос.
@@ -80,7 +81,11 @@ def build_app(mcp: MCPServer, ctx: AppContext) -> Starlette:
             return JSONResponse({"error": "not_found"}, status_code=404)
         if not path.is_file():
             return JSONResponse({"error": "not_found"}, status_code=404)
-        return FileResponse(path, media_type=_guess_mime(path))
+        response = FileResponse(path, media_type=_guess_mime(path))
+        # GigaCowork принимает download_url только без сжатого Content-Encoding:
+        # явный identity ещё и заставляет Caddy не пережимать файл на лету.
+        response.headers["Content-Encoding"] = "identity"
+        return response
 
     @mcp.custom_route("/stats", methods=["GET"])
     async def stats(request: Request) -> Response:
@@ -103,6 +108,13 @@ def build_app(mcp: MCPServer, ctx: AppContext) -> Starlette:
     app.add_middleware(
         RateLimitMiddleware,
         limiter=RateLimiter(settings.rate_limit_per_minute),
+    )
+    # Профиль GigaCowork: 405 на GET /mcp без сессии и 403 на чужой Origin.
+    # Добавляется последним, поэтому оказывается внешним слоем — до ключа и лимитов.
+    app.add_middleware(
+        ProtocolCompatMiddleware,
+        mcp_path=settings.mcp_path,
+        allowed_origins=settings.allowed_origins,
     )
     return app
 

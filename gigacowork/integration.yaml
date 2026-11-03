@@ -1,0 +1,18 @@
+# Карточка витрины cowork_hub для Kandinsky MCP.
+#
+# Путь в репозитории cowork_hub: integrations/kandinsky-image/integration.yaml
+# Slug карточки (имя папки) обязан совпадать с Definition.id —
+# gigacowork/definition.yaml, id: kandinsky-image.
+#
+# Публично описанный минимальный формат карточки — ровно четыре поля (§2.3).
+# Адреса MCP, Definition, иконки, формы настройки и учётные данные в карточку
+# не записываются, поэтому поля id в самом YAML нет: идентификатор задаётся
+# именем папки. Дополнительные поля не добавляем без согласования с cowork_hub.
+
+version: "1"
+name: "Kandinsky"
+description: "Генерирует изображения по текстовому описанию, редактирует и увеличивает готовые картинки."
+# TODO: id категории взять из categories.yaml репозитория cowork_hub.
+# В руководстве пример — management; для медиа-инструмента предположительно
+# creative. Точное значение — открытый вопрос в docs/GIGACOWORK.md.
+category: creative

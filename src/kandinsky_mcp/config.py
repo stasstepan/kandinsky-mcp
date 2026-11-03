@@ -42,6 +42,19 @@ class Settings(BaseSettings):
     # MCP-сессия рвалась с «client session is not running».
     rate_limit_per_minute: int = 120
 
+    # --- Совместимость с GigaCowork -------------------------------------------
+    # Origin, которым разрешено обращаться к /mcp (через запятую). Пусто —
+    # любой присланный Origin считается недоверенным и получает 403.
+    # Пример: MCP_ALLOWED_ORIGINS=https://cowork.ru,https://*.cowork.ru
+    mcp_allowed_origins: str = ""
+    # Потолок на весь результат инструмента в символах. GigaCowork обрезает
+    # результат длиннее 100 000 символов, поэтому inline-превью добавляем,
+    # только пока ответ укладывается в этот бюджет.
+    max_inline_result_chars: int = 90_000
+    # Входной файл сессии: лимит и таймаут скачивания по read_url.
+    session_file_max_bytes: int = 100 * 1024 * 1024
+    session_file_timeout: float = 120.0
+
     # --- Хранилище ---
     data_dir: Path = Path("/data")
     result_ttl_hours: int = 168
@@ -91,6 +104,11 @@ class Settings(BaseSettings):
     @property
     def auth_enabled(self) -> bool:
         return bool(self.api_key)
+
+    @property
+    def allowed_origins(self) -> tuple[str, ...]:
+        """Разрешённые Origin для /mcp; поддерживается шаблон https://*.домен."""
+        return tuple(item.strip() for item in self.mcp_allowed_origins.split(",") if item.strip())
 
     @property
     def results_dir(self) -> Path:

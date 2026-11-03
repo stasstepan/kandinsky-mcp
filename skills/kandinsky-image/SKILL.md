@@ -33,23 +33,27 @@ whenToUse: "Просьбы нарисовать или сгенерироват�
 
 ## Сохранение картинки в файлы сессии
 
-Чтобы сохранить картинку в файлы сессии: вызови `kandinsky_task_result(task_id,
-return_base64=true)`, затем в `python_run` декодируй `b64` и запиши в
-`/session/<имя>.<расширение по mime>`. Проверь, что `len(data)` совпадает с полем
-`bytes`, а `sha256` — с `sha256` из ответа. При `b64_error=file_too_large` отдай
-пользователю ссылку `url` вместо файла.
+В GigaCowork файл попадает в сессию сам: инструменты генерации объявляют
+`x-session-file-output: url`, платформа скачивает файл по
+`structuredContent.download_url`. Ничего декодировать не нужно.
+
+Для клиентов без файлового расширения (например, DSH) вызови
+`kandinsky_task_result(task_id, return_base64=true)` и возьми
+`structuredContent.media[].b64`, затем декодируй и запиши в файл. Проверь, что
+`len(data)` совпадает с `bytes`, а `sha256` — с `sha256` из ответа. Если
+`b64_error=file_too_large`, файл больше 4 МБ — скачивай по `download_url`.
 
 Рабочая последовательность:
 
 1. `kandinsky_image_generate(prompt, wait_seconds=0)` → `task_id`
 2. `kandinsky_task_status(task_id)` повторять до `saved`
-3. `kandinsky_task_result(task_id, return_base64=true)` → `media[].b64`
-4. `python_run`: `base64.b64decode` → проверить длину и sha256 → записать файл
-5. Сообщить пользователю, что файл в панели Files
+3. `kandinsky_task_result(task_id, return_base64=true)` → `media[].b64` в `structuredContent`
+4. декодировать base64 → проверить длину и sha256 → записать файл
+5. сообщить пользователю, что файл готов
 
 `b64` отдаётся только для файлов до 4 МБ. Картинка 1024×1024 в JPEG — это
 150–300 КБ, base64 от неё ~1.37×, запас большой. Не влезает — вернётся
-`b64_error: "file_too_large"`, тогда показывайте ссылку.
+`b64_error: "file_too_large"`, тогда используйте `download_url`.
 
 `kandinsky_task_result` читает файл с диска и в API не ходит, поэтому повторные
 вызовы безопасны и квоту не тратят.
@@ -151,25 +155,41 @@ return_base64=true)`, затем в `python_run` декодируй `b64` и з�
 
 ## Что приходит в ответе
 
+Текстовая часть — короткая сводка без ссылок (её читает модель):
+
+```
+task_id=3797, status=saved, model=k6-image-t2i; файл: 3797.jpg, image/jpeg, 101751 Б, sha256=78fa0d54…
+Файл готов: filename, content_type и download_url — в structuredContent.
+```
+
+Машинные данные лежат в `structuredContent`:
+
 ```json
 {
   "task_id": "3797",
   "status": "saved",
   "model": "k6-image-t2i",
   "elapsed_ms": 16000,
+  "filename": "3797.jpg",
+  "content_type": "image/jpeg",
+  "download_url": "https://kandinsky.example.com/files/results/2026-10-24/3797.jpg?exp=…&sig=…",
+  "size": 101751,
   "media": [{
+    "filename": "3797.jpg",
     "mime": "image/jpeg",
     "bytes": 101751,
     "sha256": "78fa0d54…",
     "url": "https://kandinsky.example.com/files/results/2026-10-24/3797.jpg?exp=…&sig=…",
     "path": "results/2026-10-24/3797.jpg"
   }],
-  "next": "Файл сохранён. Ссылка media[].url отдаёт его по подписи."
+  "next": "Файл готов: filename, content_type и download_url — в structuredContent."
 }
 ```
 
-- Картинка приходит **превью прямо в ответе**, если она меньше 1.5 МБ.
-- `media[].url` — подписанная ссылка, открывается без заголовков, живёт по сроку.
+- Картинка приходит **превью прямо в ответе**, пока результат укладывается в
+  бюджет `MAX_INLINE_RESULT_CHARS` (по умолчанию 90 000 символов).
+- `download_url` — подписанная HTTPS-ссылка; в тексте ответа её нет, чтобы
+  временные ссылки не попадали в контекст модели.
 - `status` = `failed` — смотрите `error`, повтор без изменений бесполезен.
 
 ## Примеры

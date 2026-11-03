@@ -121,7 +121,7 @@ create ──► POST /tasks/…  ──► task_id
 
 ## 7. Ответ инструментов
 
-Единый формат для всех инструментов:
+Единый `structuredContent` для всех инструментов:
 
 ```json
 {
@@ -131,20 +131,28 @@ create ──► POST /tasks/…  ──► task_id
   "prompt": "закат над морем",
   "params": {"query": "закат над морем", "resolution": "1024x1024"},
   "elapsed_ms": 18400,
+  "filename": "1842.jpg",
+  "content_type": "image/jpeg",
+  "download_url": "https://host/files/results/2026-02-14/1842.jpg?exp=…&sig=…",
+  "size": 148231,
   "media": [{
+    "filename": "1842.jpg",
     "mime": "image/jpeg",
-    "bytes": 1482311,
+    "bytes": 148231,
     "sha256": "9f2c…",
     "url": "https://host/files/results/2026-02-14/1842.jpg?exp=…&sig=…",
     "path": "results/2026-02-14/1842.jpg"
   }],
-  "next": "Файл сохранён. Ссылка media[].url отдаёт его по подписи."
+  "next": "Файл готов: filename, content_type и download_url — в structuredContent."
 }
 ```
 
-`next` содержит подсказку, что делать дальше: забрать файл, подождать или
-исправить запрос. Ошибки возвращаются с `is_error: true` и кодом, по которому
-можно действовать.
+`content[].text` — короткая сводка без ссылок, путей и base64: её читает модель,
+и временные файловые ссылки в контекст модели попадать не должны. Inline-превью
+(`ImageContent`) добавляется, только пока ответ укладывается в
+`MAX_INLINE_RESULT_CHARS`. `next` содержит подсказку, что делать дальше: забрать
+файл, подождать или исправить запрос. Ошибки возвращаются с `is_error: true` и
+кодом, по которому можно действовать.
 
 ## 8. Ошибки
 
@@ -219,3 +227,25 @@ create ──► POST /tasks/…  ──► task_id
 `k6_t2va_lite`, `giga_avatar`) с пометкой «инструмент не опубликован». Чтобы
 добавить видео, достаточно трёх инструментов и проверки формата результата —
 ядро, хранилище и доставка файлов не меняются.
+
+## 14. Профиль GigaCowork
+
+Профиль совместимости живёт отдельными модулями и не размазан по инструментам:
+
+| Модуль | Что делает |
+|---|---|
+| `profile.py` | `x-session-file-output` в аннотациях, `outputSchema`, JSON-RPC `-32602` на неизвестный инструмент и невалидные аргументы |
+| `middleware.py` | `405` на `GET /mcp` без сессии, `403` на недоверенный `Origin` |
+| `tools/session_files.py` | скачивание входного файла сессии по временному `read_url` (только HTTPS, лимит, без логирования URL) |
+
+Файловый режим: вход — `kandinsky_image_edit`/`kandinsky_image_upscale`
+принимают `read_url` с маркером `x-session-file-input` (`model_field: source`,
+`transport: read_url`); выход — `structuredContent.download_url`, файл
+переносится платформой в сессию. `download_url` отдаётся с
+`Content-Encoding: identity`, Caddy не сжимает `/files/*` и не логирует query.
+
+Ограничения GigaCowork, под которые подогнан сервер: 60 с на `tools/call`
+(ожидание внутри вызова ≤ 45 с), 100 000 символов на результат инструмента,
+10 MiB на MCP-ответ, имена инструментов `[A-Za-z0-9_-]{1,64}`, полный каталог
+в первом `tools/list`.
+
