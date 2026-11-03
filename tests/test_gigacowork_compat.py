@@ -451,7 +451,7 @@ def test_mcp_requires_api_key(bundle: Any) -> None:
 # --- результат инструмента ---------------------------------------------------
 
 
-async def test_saved_result_has_file_mode_and_no_url_in_text(bundle: Any) -> None:
+async def test_saved_result_has_file_mode_and_link_in_text(bundle: Any) -> None:
     fake = install_fake(bundle)
     result = await bundle.mcp.call_tool(
         "kandinsky_image_generate",
@@ -468,14 +468,14 @@ async def test_saved_result_has_file_mode_and_no_url_in_text(bundle: Any) -> Non
     assert fake.calls == 1
 
     text = "\n".join(block.text for block in result.content if block.type == "text")
-    assert "https://" not in text
-    assert "sig=" not in text
+    # GigaCowork не переносит файл в сессию сам, поэтому ссылка нужна в тексте.
+    assert "download_url: https://kandinsky.example/files/" in text
     assert "101.png" in text
-    # Маленькая картинка укладывается в бюджет — превью приходит.
+    # Маленькая картинка приходит превью (по умолчанию бюджет отключён).
     assert any(block.type == "image" for block in result.content)
 
 
-async def test_large_result_stays_within_gigacowork_limit(bundle: Any) -> None:
+async def test_large_image_still_has_preview_by_default(bundle: Any) -> None:
     install_fake(bundle, BIG_PNG)
     result = await bundle.mcp.call_tool(
         "kandinsky_image_generate",
@@ -483,15 +483,31 @@ async def test_large_result_stays_within_gigacowork_limit(bundle: Any) -> None:
     )
 
     assert result.is_error is False
-    text_len = sum(len(block.text) for block in result.content if block.type == "text")
+    text = "\n".join(block.text for block in result.content if block.type == "text")
     image_len = sum(len(block.data) for block in result.content if block.type == "image")
-    assert text_len + image_len <= 100_000
-    # Превью не влезло в бюджет, но structuredContent и файл на месте.
+    # Текст компактный, превью не режется: иначе GigaCowork не покажет картинку.
+    assert len(text) < 100_000
+    assert image_len > 0
+    assert result.structured_content["download_url"].startswith("https://")
+
+
+async def test_inline_budget_can_disable_preview() -> None:
+    base = make_workdir()
+    try:
+        limited = build(
+            settings=make_settings(base, max_inline_result_chars=10_000), sync_routes=False
+        )
+        install_fake(limited, BIG_PNG)
+        result = await limited.mcp.call_tool(
+            "kandinsky_image_generate",
+            {"prompt": "большая картинка", "wait_seconds": 5},
+        )
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+    image_len = sum(len(block.data) for block in result.content if block.type == "image")
     assert image_len == 0
     assert result.structured_content["download_url"].startswith("https://")
-    assert "base64" not in "\n".join(
-        block.text for block in result.content if block.type == "text"
-    )
 
 
 async def test_read_url_is_downloaded_and_never_exposed(bundle: Any, monkeypatch: Any) -> None:
@@ -514,8 +530,8 @@ async def test_read_url_is_downloaded_and_never_exposed(bundle: Any, monkeypatch
     rendered = json.dumps(result.structured_content, ensure_ascii=False)
     # Временная read_url не должна попасть ни в текст, ни в structuredContent.
     assert "files.example" not in rendered
-    assert "https://" not in text
-    assert "sig=" not in text
+    assert "files.example" not in text
+    assert "source.png" not in text
 
 
 async def test_read_url_rejects_http_url() -> None:

@@ -116,7 +116,7 @@ def build_payload(
         payload["size"] = primary.bytes
     if record.status == "saved":
         payload["next"] = (
-            "Файл готов: filename, content_type и download_url — в structuredContent."
+            "Файл готов: filename, размер и download_url — в ответе; ссылка живёт 7 дней."
         )
     elif record.status == "failed":
         payload["error"] = record.error

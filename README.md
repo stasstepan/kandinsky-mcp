@@ -14,11 +14,11 @@ API асинхронный: заявка создаётся, затем опра
 - **Результат не теряется.** API отдаёт файл однократно и хранит его 10 минут; сервер
   скачивает результат фоновым поллером сразу, как только задача готова, и хранит у себя.
   Повторный вызов инструмента не «сжигает» уже полученную картинку.
-- Картинка возвращается **превью в ответе** (пока результат укладывается в
-  100 000 символов), а метаданные и `download_url` — в `structuredContent`;
-  GigaCowork по этой ссылке переносит файл в сессию.
 - **Файлы сессии GigaCowork:** вход — `read_url` в edit/upscale, выход —
   `x-session-file-output: url`.
+- Картинка возвращается **превью в ответе** (GigaCowork показывает её в чате),
+  а ссылка `download_url` дублируется в тексте, чтобы агент мог отдать её
+  пользователю. Метаданные — в `structuredContent`.
 - Два транспорта в одном образе: Streamable HTTP (`/mcp`) и stdio.
 - Ключ доступа `X-API-Key`, ограничение частоты запросов, non-root контейнер.
 
@@ -34,9 +34,10 @@ API асинхронный: заявка создаётся, затем опра
 | `kandinsky_tasks_list` | Последние задачи с фильтрами |
 | `kandinsky_routes` | Справка: какие модели доступны, какие параметры и значения допустимы |
 
-Текст ответа — короткая сводка без ссылок (её читает модель). Машинные данные,
-включая `filename`, `content_type`, `download_url`, лежат в `structuredContent`;
-готовый файл GigaCowork переносит в сессию по аннотации `x-session-file-output`:
+Текст ответа — короткая сводка: `task_id`, статус, метаданные файла и
+`download_url`. Машинные данные (включая `filename`, `content_type`, `size`)
+лежат в `structuredContent`; готовый файл также объявлен аннотацией
+`x-session-file-output` для платформ, которые умеют переносить его в сессию.
 
 ```json
 {
@@ -58,8 +59,15 @@ API асинхронный: заявка создаётся, затем опра
     "url": "https://kandinsky.example/files/results/2026-02-14/1842.jpg?exp=…&sig=…",
     "path": "results/2026-02-14/1842.jpg"
   }],
-  "next": "Файл готов: filename, content_type и download_url — в structuredContent."
+  "next": "Файл готов: filename, размер и download_url — в ответе; ссылка живёт 7 дней."
 }
+```
+
+Текстовая часть того же ответа:
+
+```
+task_id=1842, status=saved, model=k6-image-t2i; файл: 1842.jpg, image/jpeg, 148231 Б, sha256=9f2c…
+download_url: https://kandinsky.example/files/results/2026-02-14/1842.jpg?exp=…&sig=…
 ```
 
 ## Быстрый старт
@@ -103,10 +111,11 @@ curl -s localhost:8000/healthz
   прикладная ошибка → `isError: true`;
 - `GET /mcp` без сессии → `405`, чужой `Origin` → `403`
   (доверенные задаются `MCP_ALLOWED_ORIGINS`);
-- файлы сессии: вход через `read_url` (`x-session-file-input`), выход через
-  `structuredContent.download_url` (`x-session-file-output: url`);
-- результат инструмента укладывается в 100 000 символов: inline-превью
-  добавляется только пока ответ в бюджете `MAX_INLINE_RESULT_CHARS`;
+- файлы сессии: вход через `read_url` (`x-session-file-input`), выход объявлен
+  `x-session-file-output: url`; ссылка на файл дублируется в тексте, потому что
+  GigaCowork файл в сессию сам не забирает (проверено по логам);
+- inline-превью не режется по умолчанию (`MAX_INLINE_RESULT_CHARS=0`): только
+  из него GigaCowork показывает картинку в чате;
 - `download_url` отдаётся без сжатия (`Content-Encoding: identity`).
 
 Проверка совместимости без траты квоты:
@@ -167,7 +176,7 @@ Cursor / Windsurf — тот же блок в `mcpServers`, для stdio:
 | `RATE_LIMIT_PER_MINUTE` | нет | `120` | защита квоты API от циклов |
 | `ROUTE_SYNC` | нет | `true` | сверять маршруты с `openapi.json` |
 | `ALLOW_LOCAL_PATHS` | нет | `false` | читать входные картинки с диска |
-| `MAX_INLINE_RESULT_CHARS` | нет | `90000` | бюджет inline-превью в результате |
+| `MAX_INLINE_RESULT_CHARS` | нет | `0` | бюджет inline-превью; `0` — без ограничения |
 | `MCP_ALLOWED_ORIGINS` | нет | — | доверенные `Origin` для `/mcp` (через запятую; `PUBLIC_BASE_URL` доверяется автоматически) |
 | `SESSION_FILE_MAX_BYTES` | нет | `104857600` | лимит входного файла сессии |
 | `SESSION_FILE_TIMEOUT` | нет | `120` | таймаут скачивания файла сессии, с |

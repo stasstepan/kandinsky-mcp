@@ -129,17 +129,18 @@ def as_json(data: dict[str, Any]) -> str:
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
-# Сколько символов в результате инструмента готовы принять «обычные» клиенты.
-# GigaCowork обрезает результат длиннее 100 000 символов, поэтому inline-превью
-# добавляем только пока ответ укладывается в бюджет.
+# Ограничение на inline-превью в символах. 0 — без ограничения: GigaCowork
+# показывает картинку только из MCP image-блока (файл в сессию не забирает),
+# поэтому превью важнее формального лимита на размер текстового результата.
 INLINE_RESULT_BUDGET = 90_000
 
 
 def summary_text(data: dict[str, Any]) -> str:
-    """Короткая сводка без URL, путей и base64.
+    """Короткая сводка без base64 и JSON.
 
-    Текст читает модель, поэтому временные ссылки на файлы в него не попадают:
-    они живут в structuredContent (``download_url``) и в MCP image-блоке.
+    Ссылка на готовый файл намеренно попадает в текст: GigaCowork не переносит
+    файл в сессию сам (проверено по логам — платформа не запрашивает
+    download_url), и агенту нужен адрес, чтобы отдать его пользователю.
     """
     status = data.get("status")
     task_id = data.get("task_id")
@@ -153,6 +154,8 @@ def summary_text(data: dict[str, Any]) -> str:
                 f"{item.get('mime')}, {item.get('bytes')} Б, "
                 f"sha256={str(item.get('sha256') or '')[:16]}…"
             )
+            if item.get("url"):
+                lines.append(f"download_url: {item['url']}")
         if not data.get("media"):
             lines.append(f"{head}; файл готов")
     elif status == "failed":
@@ -188,17 +191,20 @@ def result_with_images(
 ) -> CallToolResult:
     """Ответ с inline-превью: краткий текст, структурированные данные, картинки.
 
-    Превью добавляется, только пока результат укладывается в ``max_chars``:
-    GigaCowork обрезает ответы длиннее 100 000 символов, и обрезанный base64
-    ломает картинку. Полный файл всегда доступен через structuredContent.
+    ``max_chars <= 0`` — превью без ограничения по размеру (так по умолчанию:
+    GigaCowork показывает картинку только из MCP image-блока). Если задан
+    положительный бюджет, превью добавляется, только пока результат в него
+    укладывается.
     """
     text = summary if summary is not None else summary_text(data)
     blocks: list[Any] = [TextContent(type="text", text=text)]
 
-    budget = (INLINE_RESULT_BUDGET if max_chars is None else max_chars) - len(text) - 500
+    limit = INLINE_RESULT_BUDGET if max_chars is None else max_chars
+    unlimited = limit <= 0
+    budget = limit - len(text) - 500
     for raw, mime in images:
         estimated = ((len(raw) + 2) // 3) * 4
-        if estimated > budget:
+        if not unlimited and estimated > budget:
             continue
         budget -= estimated
         blocks.append(

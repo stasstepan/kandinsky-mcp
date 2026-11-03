@@ -155,11 +155,11 @@ whenToUse: "Просьбы нарисовать или сгенерироват�
 
 ## Что приходит в ответе
 
-Текстовая часть — короткая сводка без ссылок (её читает модель):
+Текстовая часть — короткая сводка со ссылкой (её читает модель):
 
 ```
 task_id=3797, status=saved, model=k6-image-t2i; файл: 3797.jpg, image/jpeg, 101751 Б, sha256=78fa0d54…
-Файл готов: filename, content_type и download_url — в structuredContent.
+download_url: https://kandinsky.example.com/files/results/2026-10-24/3797.jpg?exp=…&sig=…
 ```
 
 Машинные данные лежат в `structuredContent`:
@@ -182,14 +182,15 @@ task_id=3797, status=saved, model=k6-image-t2i; файл: 3797.jpg, image/jpeg, 
     "url": "https://kandinsky.example.com/files/results/2026-10-24/3797.jpg?exp=…&sig=…",
     "path": "results/2026-10-24/3797.jpg"
   }],
-  "next": "Файл готов: filename, content_type и download_url — в structuredContent."
+  "next": "Файл готов: filename, размер и download_url — в ответе; ссылка живёт 7 дней."
 }
 ```
 
-- Картинка приходит **превью прямо в ответе**, пока результат укладывается в
-  бюджет `MAX_INLINE_RESULT_CHARS` (по умолчанию 90 000 символов).
-- `download_url` — подписанная HTTPS-ссылка; в тексте ответа её нет, чтобы
-  временные ссылки не попадали в контекст модели.
+- Картинка приходит **превью прямо в ответе** (по умолчанию без ограничения по
+  размеру; `MAX_INLINE_RESULT_CHARS` может задать бюджет).
+- `download_url` — подписанная HTTPS-ссылка, она продублирована в тексте: так
+  GigaCowork-агент может отдать ссылку пользователю, даже если файл не попал в
+  сессию.
 - `status` = `failed` — смотрите `error`, повтор без изменений бесполезен.
 
 ## Примеры
