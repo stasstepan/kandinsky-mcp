@@ -168,13 +168,16 @@ async def submit(
         elapsed = time.monotonic() - started
         remaining = ctx.settings.call_budget_seconds - elapsed
         if remaining < effective_wait:
+            reduced = effective_wait - max(0.0, remaining)
             effective_wait = max(0.0, remaining)
-            collected.append(
-                f"Создание задачи заняло {elapsed:.0f} с; ждём результат ещё "
-                f"{effective_wait:.0f} с, чтобы уложиться в таймаут клиента. "
-                "Если не готово — вернётся task_id, его можно забрать через "
-                "kandinsky_task_result."
-            )
+            # Мелкое сокращение на пару секунд не стоит внимания модели.
+            if reduced >= 5 or effective_wait == 0:
+                collected.append(
+                    f"Создание задачи заняло {elapsed:.0f} с; ждём результат ещё "
+                    f"{effective_wait:.0f} с, чтобы уложиться в таймаут клиента. "
+                    "Если не готово — вернётся task_id, его можно забрать через "
+                    "kandinsky_task_result."
+                )
         record = await wait_for_local_terminal(ctx, record.task_id, effective_wait)
     except KandinskyError as exc:
         if exc.quota:
