@@ -65,11 +65,12 @@ def prepare_image(
             width, height = probe.size
             fmt = (probe.format or "").upper()
             image = probe.copy()
-    except (UnidentifiedImageError, OSError) as exc:
+    except (UnidentifiedImageError, OSError):
+        # Без внутреннего repr и путей: сообщение читает модель и пользователь.
         raise KandinskyError(
             INPUT_TOO_LARGE,
-            f"Не удалось прочитать изображение: {exc}. Поддерживаются JPEG и PNG.",
-        ) from exc
+            "Не удалось прочитать изображение. Поддерживаются JPEG и PNG.",
+        ) from None
 
     if width <= 0 or height <= 0:
         raise KandinskyError(INPUT_BAD_RESOLUTION, f"Некорректные размеры изображения: {width}x{height}")
