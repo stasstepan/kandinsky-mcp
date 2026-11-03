@@ -36,8 +36,8 @@ API асинхронный: заявка создаётся, затем опра
 
 Текст ответа — короткая сводка: `task_id`, статус, метаданные файла и
 `download_url`. Машинные данные (включая `filename`, `content_type`, `size`)
-лежат в `structuredContent`; готовый файл также объявлен аннотацией
-`x-session-file-output` для платформ, которые умеют переносить его в сессию.
+лежат в `structuredContent`; GigaCowork по аннотации `x-session-file-output`
+забирает файл в сессию, а ссылка в тексте остаётся fallback.
 
 ```json
 {
@@ -111,9 +111,10 @@ curl -s localhost:8000/healthz
   прикладная ошибка → `isError: true`;
 - `GET /mcp` без сессии → `405`, чужой `Origin` → `403`
   (доверенные задаются `MCP_ALLOWED_ORIGINS`);
-- файлы сессии: вход через `read_url` (`x-session-file-input`), выход объявлен
-  `x-session-file-output: url`; ссылка на файл дублируется в тексте, потому что
-  GigaCowork файл в сессию сам не забирает (проверено по логам);
+- файлы сессии: вход через `read_url` (`x-session-file-input`), выход —
+  `x-session-file-output: url`; GigaCowork забирает файл по `download_url` и
+  кладёт в сессию (проверено: после генерации платформа делает GET `/files/...`).
+  Ссылка дублируется в тексте как fallback для версий без файлового режима;
 - inline-превью не режется по умолчанию (`MAX_INLINE_RESULT_CHARS=0`): только
   из него GigaCowork показывает картинку в чате;
 - `download_url` отдаётся без сжатия (`Content-Encoding: identity`).
@@ -154,8 +155,9 @@ Cursor / Windsurf — тот же блок в `mcpServers`, для stdio:
 }
 ```
 
-`toolCallTimeoutMs` важен: по умолчанию инструмент ждёт готовности до 60 секунд
-(`wait_seconds`). Если поставить меньше — вызов вернёт `task_id`, а результат
+`toolCallTimeoutMs` важен: сервер отвечает в пределах бюджета вызова
+(`CALL_BUDGET_SECONDS=45`), а если результат не готов — возвращает `task_id`.
+Если поставить таймаут меньше 45 с, клиент оборвёт вызов раньше ответа; результат
 можно забрать позже через `kandinsky_task_result` (файл уже будет на сервере).
 
 ## Настройка
@@ -172,7 +174,7 @@ Cursor / Windsurf — тот же блок в `mcpServers`, для stdio:
 | `DATA_DIR` | нет | `/data` | где лежат задачи и результаты |
 | `RESULT_TTL_HOURS` | нет | `168` | срок хранения файлов |
 | `DEFAULT_CENSOR` | нет | `true` | цензура контента по умолчанию |
-| `DEFAULT_WAIT_SECONDS` | нет | `25` | ожидание результата внутри вызова (максимум 45) |
+| `DEFAULT_WAIT_SECONDS` | нет | `25` | ожидание результата внутри вызова (ограничивается бюджетом вызова) |
 | `CALL_BUDGET_SECONDS` | нет | `45` | общий бюджет `tools/call`: создание + ожидание |
 | `RATE_LIMIT_PER_MINUTE` | нет | `120` | защита квоты API от циклов |
 | `ROUTE_SYNC` | нет | `true` | сверять маршруты с `openapi.json` |
