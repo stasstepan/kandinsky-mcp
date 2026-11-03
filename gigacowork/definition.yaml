@@ -1,50 +1,23 @@
-# Definition интеграции Kandinsky MCP для общей витрины GigaCowork.
-# Формат: cowork-proxy-definition/v2 (руководство «Разработка внешнего MCP
-# для GigaCowork», §2.4).
-#
-# В Definition намеренно нет адреса MCP и нет значений секретов: адрес
-# связывается с интеграцией при регистрации, значения полей заполняет
-# администратор или пользователь в подключении.
+# Definition интеграции Kandinsky MCP для GigaCowork (cowork-proxy-definition/v2).
+# Адрес MCP сюда не записывается: он фиксируется при регистрации.
+# Секретов в файле нет: ключ администратор вводит в подключении.
 
 definition_version: cowork-proxy-definition/v2
-
-# Стабильный идентификатор интеграции; формат витрины:
-# [a-z0-9][a-z0-9_-]{0,63}. Совпадает со slug карточки витрины
-# (gigacowork/integration.yaml, папка integrations/kandinsky-image
-# в репозитории cowork_hub).
 id: kandinsky-image
-
-# Версия содержимого Definition. При изменении документа регистрируется
-# новая ревизия.
 revision: "1"
 
-# Несекретных настроек у интеграции нет: адрес MCP фиксирован при
-# регистрации, пользователю настраивать нечего.
+# Несекретных настроек нет: пользователю нечего заполнять, кроме ключа.
 configuration:
   fields: []
 
 authorization:
-  # Сервер принимает ключ доступа в собственном HTTP-заголовке X-API-Key
-  # (см. README, раздел «Безопасность»).
   default: custom_headers
-
-  # Общий режим организации разрешён: ключ можно один раз настроить на
-  # организацию. Ограничение — квота Kandinsky API общая на этот ключ.
   allow_shared_account: true
-
   methods:
-    # ВНИМАНИЕ: точная YAML-схема custom_headers в руководстве не приведена.
-    # В §2.4.4 описано только назначение: «форма для заявленных секретных
-    # полей; подписи полей и точная передача каждого значения в разрешённый
-    # HTTP-заголовок». Ниже — best-effort вариант по аналогии с
-    # configuration.fields/configuration.delivery из §2.4.3: одно секретное
-    # поле api_key, значение уходит в заголовок X-API-Key.
-    # Сверить с командой GigaCowork перед регистрацией и при необходимости
-    # заменить форму на согласованную.
     custom_headers:
       fields:
         - key: api_key
-          label: Ключ доступа Kandinsky MCP (X-API-Key)
+          label: API-ключ Kandinsky MCP
           type: string
           required: true
           secret: true
@@ -56,11 +29,7 @@ authorization:
             name: X-API-Key
 
 runtime:
-  # Лимит GigaCowork на один tools/call — 60 с. Инструменты генерации ждут
-  # готовности не дольше 45 с и укладываются в этот бюджет.
+  # GigaCowork: не больше 60 с на tools/call; инструменты ждут внутри до 45 с.
   request_timeout_ms: 55000
-  # 10 MiB — верхняя граница размера одного MCP-ответа в GigaCowork
-  # (совпадает с лимитом обновления tools/list).
   max_response_bytes: 10485760
-  # Клиентские заголовки серверу не нужны.
   forward_client_headers: []

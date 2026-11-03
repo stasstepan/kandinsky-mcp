@@ -78,4 +78,8 @@ class ProtocolCompatMiddleware:
         await self.app(scope, receive, send)
 
     def _origin_allowed(self, origin: str) -> bool:
-        return any(pattern == "*" or fnmatch(origin, pattern) for pattern in self.allowed_origins)
+        normalized = origin.strip().rstrip("/").lower()
+        return any(
+            pattern == "*" or fnmatch(normalized, pattern.lower())
+            for pattern in self.allowed_origins
+        )

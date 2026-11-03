@@ -396,7 +396,23 @@ def test_origin_policy(bundle: Any, allowed_origin_bundle: Any) -> None:
             json={"jsonrpc": "2.0", "id": "init-1", "method": "initialize", "params": {}},
             headers=rpc_headers(Origin="https://evil.example"),
         )
+        same_origin = client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": "init-1",
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": {},
+                    "clientInfo": {"name": "gigacowork", "version": "1"},
+                },
+            },
+            headers=rpc_headers(Origin="https://kandinsky.example"),
+        )
     assert evil.status_code == 403
+    # PUBLIC_BASE_URL доверяется как same-origin.
+    assert same_origin.status_code == 200
 
     with TestClient(allowed_origin_bundle.app) as client:
         allowed = client.post(

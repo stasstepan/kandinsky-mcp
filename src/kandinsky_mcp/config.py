@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -107,8 +108,22 @@ class Settings(BaseSettings):
 
     @property
     def allowed_origins(self) -> tuple[str, ...]:
-        """Разрешённые Origin для /mcp; поддерживается шаблон https://*.домен."""
-        return tuple(item.strip() for item in self.mcp_allowed_origins.split(",") if item.strip())
+        """Доверенные Origin для /mcp.
+
+        Best practice: same-origin (PUBLIC_BASE_URL) доверяется всегда, остальные
+        задаются через MCP_ALLOWED_ORIGINS. Пустой список + чужой Origin = 403.
+        """
+        origins = [
+            item.strip().rstrip("/").lower()
+            for item in self.mcp_allowed_origins.split(",")
+            if item.strip()
+        ]
+        base = urlsplit(self.public_base_url)
+        if base.scheme and base.netloc:
+            same_origin = f"{base.scheme}://{base.netloc}".lower()
+            if same_origin not in origins:
+                origins.append(same_origin)
+        return tuple(origins)
 
     @property
     def results_dir(self) -> Path:

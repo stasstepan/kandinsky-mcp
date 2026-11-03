@@ -168,7 +168,7 @@ Cursor / Windsurf — тот же блок в `mcpServers`, для stdio:
 | `ROUTE_SYNC` | нет | `true` | сверять маршруты с `openapi.json` |
 | `ALLOW_LOCAL_PATHS` | нет | `false` | читать входные картинки с диска |
 | `MAX_INLINE_RESULT_CHARS` | нет | `90000` | бюджет inline-превью в результате |
-| `MCP_ALLOWED_ORIGINS` | нет | — | доверенные `Origin` для `/mcp` (через запятую) |
+| `MCP_ALLOWED_ORIGINS` | нет | — | доверенные `Origin` для `/mcp` (через запятую; `PUBLIC_BASE_URL` доверяется автоматически) |
 | `SESSION_FILE_MAX_BYTES` | нет | `104857600` | лимит входного файла сессии |
 | `SESSION_FILE_TIMEOUT` | нет | `120` | таймаут скачивания файла сессии, с |
 
