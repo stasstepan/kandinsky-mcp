@@ -47,6 +47,17 @@ kandinsky.example.com {
 
 	log {
 		output stdout
-		format console
+		# Секреты и подписи не должны попадать в журнал: заголовки (X-API-Key,
+		# Authorization) убираем целиком, у ссылок на файлы вырезаем exp/sig.
+		format filter {
+			wrap console
+			fields {
+				request>headers delete
+				request>uri query {
+					delete exp
+					delete sig
+				}
+			}
+		}
 	}
 }
